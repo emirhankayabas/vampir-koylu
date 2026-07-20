@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🧛 Vampir Köylü
 
-## Getting Started
+Gerçek zamanlı, moderatör destekli Vampir Köylü oyunu. Tek Next.js projesi
+(App Router) — frontend, API ve gerçek zamanlı akış aynı yerde.
 
-First, run the development server:
+## Özellikler
+
+- **Moderatör paneli** (`/moderator`): rolleri seç/ekle (checkbox ile aç-kapa),
+  sayıları ayarla, oyunu başlat/bitir/sıfırla, oyuncu çıkar.
+- **Katılımcı ekranı** (`/oyna`): isimle katıl, rolünü canlı gör.
+- **İki yönetim modu**: 🗣️ Sözlü veya 📱 Telefondan.
+- **Telefon modu**: gece ölenleri seçme, canlı oylama + moderatör onayıyla asma,
+  Avcı asılınca atış hakkı, otomatik kazanan tespiti.
+- **Roller**: Vampir, Doktor, Medyum, Avcı, Köylü (varsayılan) + özel rol ekleme.
+- **Gerçek zamanlı**: Server-Sent Events (SSE) — Vercel ücretsiz planda çalışır,
+  ek servis/WebSocket sunucusu gerektirmez.
+
+## Kurulum
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+`.env.local` dosyasına çalışan bir MongoDB Atlas bağlantısı koyun:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```
+MONGODB_URI=mongodb+srv://KULLANICI:SIFRE@KUME.xxxxx.mongodb.net/?retryWrites=true&w=majority
+MONGODB_DB=vampir_koylu
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+> ⚠️ **Önemli:** Bağlantı adresindeki Atlas kümesinin gerçekten var ve aktif
+> olması gerekir. Atlas'ta ücretsiz (M0) bir küme oluşturun, bir veritabanı
+> kullanıcısı ekleyin ve **Network Access** kısmında `0.0.0.0/0` erişimine izin
+> verin (Vercel'in bağlanabilmesi için). Bağlantı adresini
+> Atlas → Connect → Drivers'tan alın.
 
-## Learn More
+```bash
+npm run dev     # http://localhost:3000
+```
 
-To learn more about Next.js, take a look at the following resources:
+## Vercel'e yayınlama
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Projeyi Vercel'e import edin.
+- **Environment Variables** kısmına `MONGODB_URI` ve `MONGODB_DB` ekleyin.
+- Gerçek zamanlılık SSE ile çalıştığı için ek yapılandırma gerekmez.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Mimari
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `app/moderator` — moderatör arayüzü (client component).
+- `app/oyna` — katılımcı arayüzü (client component).
+- `app/api/game/route.ts` — tüm yazma aksiyonları (join, vote, start, hang, ...).
+- `app/api/stream/route.ts` — SSE ile role göre filtrelenmiş canlı durum.
+- `lib/game.ts` — oyun mantığı, rol dağıtımı, kazanan tespiti, projeksiyonlar.
+- `lib/mongodb.ts` — önbelleğe alınmış Atlas bağlantısı.
+- MongoDB'de tek bir `state` dokümanı tutulur (tek genel oyun).
