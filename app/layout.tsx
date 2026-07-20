@@ -1,20 +1,31 @@
-import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Inter, Cinzel } from "next/font/google";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const inter = Inter({
+  variable: "--font-sans",
   subsets: ["latin"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const cinzel = Cinzel({
+  variable: "--font-cinzel",
   subsets: ["latin"],
+  weight: ["500", "700", "900"],
 });
 
 export const metadata: Metadata = {
   title: "Vampir Köylü",
-  description: "Gerçek zamanlı vampir köylü oyunu",
+  description: "Gerçek zamanlı, animasyonlu vampir köylü oyunu",
+  applicationName: "Vampir Köylü",
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "Vampir Köylü" },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#07060d",
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
 };
 
 export default function RootLayout({
@@ -24,8 +35,8 @@ export default function RootLayout({
 }>) {
   return (
     <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      lang="tr"
+      className={`${inter.variable} ${cinzel.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">{children}</body>
     </html>

@@ -10,13 +10,14 @@ export const maxDuration = 300;
 // değiştiğinde yeni durum push edilir. Bağlantı ~4 dk sonra kapanır,
 // tarayıcının EventSource'u otomatik yeniden bağlanır.
 
-const POLL_MS = 1000;
+const POLL_MS = 500;
 const MAX_LIFETIME_MS = 4 * 60 * 1000;
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const isModerator = url.searchParams.get("role") === "moderator";
   const playerId = url.searchParams.get("playerId");
+  const code = url.searchParams.get("code") ?? "";
 
   const encoder = new TextEncoder();
 
@@ -33,7 +34,10 @@ export async function GET(request: NextRequest) {
       };
 
       const project = async () => {
-        const game = await getGame();
+        const game = await getGame(code);
+        // version 0 = "oda yok"; getVersion de eksik odada 0 döndürür, böylece
+        // notfound tekrar tekrar gönderilmez (yalnızca durum değişince).
+        if (!game) return { notfound: true, version: 0 } as const;
         return isModerator ? moderatorView(game) : participantView(game, playerId);
       };
 
@@ -53,7 +57,7 @@ export async function GET(request: NextRequest) {
       const interval = setInterval(async () => {
         if (closed) return;
         try {
-          const v = await getVersion();
+          const v = await getVersion(code);
           if (v !== lastVersion) {
             const view = await project();
             lastVersion = view.version;

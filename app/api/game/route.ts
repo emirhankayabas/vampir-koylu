@@ -1,18 +1,30 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   getGame,
+  createGame,
+  deleteGame,
   saveGame,
   makeFreshGame,
   assignRoles,
   checkWinner,
+  beginNight,
+  resolveNight,
+  submitNightAction,
+  skipNightStep,
+  resolveVote,
+  hunterShoot,
+  roleOf,
   log,
 } from "@/lib/game";
-import type { Game, RoleConfig } from "@/lib/types";
+import type { Game, RoleConfig, NightRole } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
 function bad(msg: string, code = 400) {
   return NextResponse.json({ ok: false, error: msg }, { status: code });
+}
+function ok(extra: Record<string, unknown> = {}) {
+  return NextResponse.json({ ok: true, ...extra });
 }
 
 function killPlayer(game: Game, targetId: string): string | null {
@@ -30,7 +42,20 @@ export async function POST(request: NextRequest) {
     return bad("Geçersiz istek gövdesi.");
   }
   const action = String(body.action ?? "");
-  const game = await getGame();
+
+  // Oda oluşturma tek başına — henüz kod yok.
+  if (action === "createRoom") {
+    try {
+      const created = await createGame();
+      return ok({ code: created._id });
+    } catch {
+      return bad("Oda oluşturulamadı, tekrar deneyin.", 500);
+    }
+  }
+
+  // Diğer tüm aksiyonlar bir oda kodu gerektirir.
+  const game = await getGame(String(body.code ?? ""));
+  if (!game) return bad("Oda bulunamadı. Kodu kontrol edin.", 404);
 
   switch (action) {
     // --- Katılımcı aksiyonları ---
@@ -45,7 +70,7 @@ export async function POST(request: NextRequest) {
       game.players.push({ id, name, role: null, alive: true, joinedAt: Date.now() });
       log(game, `${name} katıldı.`);
       await saveGame(game);
-      return NextResponse.json({ ok: true, playerId: id });
+      return ok({ playerId: id });
     }
 
     case "vote": {
@@ -57,15 +82,43 @@ export async function POST(request: NextRequest) {
       const target = game.players.find((p) => p.id === targetId);
       if (!target || !target.alive) return bad("Geçersiz aday.");
       game.vote.votes[playerId] = targetId;
+      // Telefon modunda herkes oy verince otomatik çöz
+      const aliveCount = game.players.filter((p) => p.alive).length;
+      if (game.mode === "phone" && Object.keys(game.vote.votes).length >= aliveCount) {
+        resolveVote(game);
+      }
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
     case "unvote": {
       const playerId = String(body.playerId ?? "");
+      if (!game.vote.active) return bad("Oylama aktif değil.");
       delete game.vote.votes[playerId];
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
+    }
+
+    case "nightAction": {
+      const playerId = String(body.playerId ?? "");
+      const kind = String(body.kind ?? "") as NightRole;
+      const targetId = String(body.targetId ?? "");
+      if (!["vampir", "doktor", "medyum"].includes(kind)) return bad("Geçersiz aksiyon türü.");
+      const res = submitNightAction(game, playerId, kind, targetId);
+      if (!res.ok) return bad(res.error!);
+      await saveGame(game);
+      return ok();
+    }
+
+    case "playerHunterShoot": {
+      // Avcı kendi telefonundan atış yapar
+      const playerId = String(body.playerId ?? "");
+      if (game.pendingHunterId !== playerId) return bad("Atış hakkınız yok.");
+      const targetId = body.targetId ? String(body.targetId) : null;
+      const res = hunterShoot(game, targetId);
+      if (!res.ok) return bad(res.error!);
+      await saveGame(game);
+      return ok();
     }
 
     // --- Moderatör: lobi ---
@@ -73,7 +126,7 @@ export async function POST(request: NextRequest) {
       const mode = body.mode === "phone" ? "phone" : "verbal";
       game.mode = mode;
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
     case "saveRoles": {
@@ -81,7 +134,6 @@ export async function POST(request: NextRequest) {
       const roles = body.roles as RoleConfig[];
       if (!Array.isArray(roles) || roles.length === 0) return bad("Rol listesi geçersiz.");
       if (!roles.some((r) => r.fill && r.enabled)) return bad("Aktif bir dolgu rolü (Köylü) olmalı.");
-      // Anahtar benzersizliği
       const keys = new Set<string>();
       for (const r of roles) {
         if (!r.key || keys.has(r.key)) return bad("Rol anahtarları benzersiz olmalı.");
@@ -98,7 +150,7 @@ export async function POST(request: NextRequest) {
         special: r.special,
       }));
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
     case "kick": {
@@ -108,7 +160,7 @@ export async function POST(request: NextRequest) {
       game.players = game.players.filter((p) => p.id !== targetId);
       if (game.players.length < before) log(game, "Bir oyuncu çıkarıldı.");
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
     // --- Moderatör: oyun akışı ---
@@ -117,27 +169,55 @@ export async function POST(request: NextRequest) {
       const res = assignRoles(game);
       if (!res.ok) return bad(res.error!);
       game.status = "in_progress";
-      game.phase = "night";
       game.dayNumber = 1;
       game.winner = null;
       game.pendingHunterId = null;
+      game.announcement = null;
       game.vote = { active: false, votes: {} };
+      game.mediumLog = [];
+      game.doctorSelfUsed = [];
       log(game, action === "newRound" ? "Yeni el başladı." : "Oyun başladı. Roller dağıtıldı.");
+      if (game.mode === "phone") {
+        beginNight(game); // 1. gece otomatik başlar
+      } else {
+        game.phase = "night";
+        game.night.active = false;
+      }
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
-    case "setPhase": {
-      const phase = body.phase === "day" ? "day" : "night";
-      if (phase === "night") game.dayNumber += 1;
-      game.phase = phase;
-      game.vote = { active: false, votes: {} };
+    case "nextNight": {
+      if (game.status !== "in_progress") return bad("Oyun devam etmiyor.");
+      if (game.pendingHunterId) return bad("Önce avcı atışı beklenmeli.");
+      game.dayNumber += 1;
+      if (game.mode === "phone") {
+        beginNight(game);
+      } else {
+        game.phase = "night";
+        game.night.active = false;
+        game.vote = { active: false, votes: {} };
+        game.announcement = null;
+      }
+      log(game, `${game.dayNumber}. gece başladı.`);
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
+    case "nightSkip": {
+      skipNightStep(game);
+      await saveGame(game);
+      return ok();
+    }
+
+    case "nightForceResolve": {
+      if (game.night.active) resolveNight(game);
+      await saveGame(game);
+      return ok();
+    }
+
+    // Sözlü mod: moderatör gece ölümlerini elle seçer
     case "nightResolve": {
-      // Moderatör gece kimlerin öldüğünü seçer
       const deaths = Array.isArray(body.deaths) ? (body.deaths as string[]) : [];
       const names: string[] = [];
       for (const id of deaths) {
@@ -145,10 +225,17 @@ export async function POST(request: NextRequest) {
         if (killed) names.push(game.players.find((p) => p.id === killed)!.name);
       }
       game.phase = "day";
+      game.announcement = {
+        kind: "morning",
+        title: `${game.dayNumber}. Sabah`,
+        lines: names.length ? [`${names.join(", ")} öldü.`] : ["Bu gece kimse ölmedi."],
+        dead: null,
+        at: Date.now(),
+      };
       log(game, names.length ? `Gece ${names.join(", ")} öldü.` : "Gece kimse ölmedi.");
       game.winner = checkWinner(game);
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
     case "voteStart": {
@@ -156,57 +243,64 @@ export async function POST(request: NextRequest) {
       game.vote = { active: true, votes: {} };
       log(game, "Oylama başladı.");
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
+    }
+
+    case "voteEnd": {
+      if (!game.vote.active) return bad("Oylama aktif değil.");
+      resolveVote(game);
+      await saveGame(game);
+      return ok();
     }
 
     case "voteCancel": {
       game.vote = { active: false, votes: {} };
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
+    // Sözlü mod: moderatör onayıyla asma
     case "hang": {
-      // Moderatör onayı ile asma
       const targetId = String(body.targetId ?? "");
       const target = game.players.find((p) => p.id === targetId);
       if (!target) return bad("Oyuncu bulunamadı.");
       killPlayer(game, targetId);
       game.vote = { active: false, votes: {} };
+      const role = roleOf(game, target.role);
+      const shown = role?.team === "vampir" ? "Vampir" : "Köylü";
+      game.announcement = {
+        kind: "hang",
+        title: "İnfaz",
+        lines: [`${target.name} asıldı.`, `Rolü: ${shown}`],
+        dead: { name: target.name, roleName: shown, team: role?.team ?? "koy" },
+        at: Date.now(),
+      };
       log(game, `${target.name} asıldı.`);
-      // Avcı asıldıysa atış hakkı
-      const role = game.roles.find((r) => r.key === target.role);
       if (role?.special === "avci") {
         game.pendingHunterId = target.id;
         log(game, `${target.name} (Avcı) atış hakkı kazandı.`);
       }
       game.winner = checkWinner(game);
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
     case "hunterShoot": {
-      if (!game.pendingHunterId) return bad("Bekleyen avcı yok.");
-      const targetId = String(body.targetId ?? "");
-      const target = game.players.find((p) => p.id === targetId);
-      if (target) {
-        killPlayer(game, targetId);
-        log(game, `Avcı ${target.name}'i vurdu.`);
-      }
-      game.pendingHunterId = null;
-      game.winner = checkWinner(game);
+      const targetId = body.targetId ? String(body.targetId) : null;
+      const res = hunterShoot(game, targetId);
+      if (!res.ok) return bad(res.error!);
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
     case "hunterSkip": {
-      game.pendingHunterId = null;
-      log(game, "Avcı atış yapmadı.");
+      const res = hunterShoot(game, null);
+      if (!res.ok) return bad(res.error!);
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
     case "toggleKill": {
-      // Moderatör manuel öldür/dirilt (esneklik için)
       const targetId = String(body.targetId ?? "");
       const p = game.players.find((x) => x.id === targetId);
       if (!p) return bad("Oyuncu bulunamadı.");
@@ -214,42 +308,52 @@ export async function POST(request: NextRequest) {
       log(game, `${p.name} ${p.alive ? "diriltildi" : "öldürüldü"}.`);
       game.winner = checkWinner(game);
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
     case "end": {
       game.status = "ended";
       game.vote = { active: false, votes: {} };
+      game.night.active = false;
       game.pendingHunterId = null;
       if (!game.winner) game.winner = checkWinner(game);
       log(game, "Oyun bitti.");
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
     case "backToLobby": {
-      // Oyuncular kalır, roller sıfırlanır; yeni katılımcılar girebilir
       game.status = "lobby";
       game.winner = null;
       game.pendingHunterId = null;
       game.vote = { active: false, votes: {} };
+      game.night.active = false;
+      game.announcement = null;
+      game.mediumLog = [];
+      game.doctorSelfUsed = [];
       game.players.forEach((p) => {
         p.role = null;
         p.alive = true;
       });
       log(game, "Lobiye dönüldü.");
       await saveGame(game);
-      return NextResponse.json({ ok: true });
+      return ok();
+    }
+
+    case "closeRoom": {
+      await deleteGame(game._id);
+      log(game, "Oda kapatıldı.");
+      return ok();
     }
 
     case "reset": {
-      const fresh = makeFreshGame();
-      fresh.roles = game.roles; // rol yapılandırmasını koru
+      const fresh = makeFreshGame(game._id);
+      fresh.roles = game.roles;
       fresh.mode = game.mode;
-      fresh.version = game.version; // saveGame +1 yapacak
+      fresh.version = game.version;
       log(fresh, "Oyun sıfırlandı.");
       await saveGame(fresh);
-      return NextResponse.json({ ok: true });
+      return ok();
     }
 
     default:

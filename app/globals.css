@@ -1,26 +1,379 @@
 @import "tailwindcss";
 
+/* ============================================================
+   Vampir Köylü — Tasarım Sistemi
+   Gotik / atmosferik mobil oyun teması
+   ============================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg-0: #07060d;
+  --bg-1: #0e0a1c;
+  --bg-2: #150d26;
+
+  --blood: #ef4444;
+  --blood-deep: #991b1b;
+  --moon: #22d3ee;
+  --violet: #a855f7;
+  --amber: #f59e0b;
+  --emerald: #34d399;
+
+  --ink: #f5f3ff;
+  --muted: #a9a3c7;
+  --faint: #6f6a8d;
+
+  --panel: rgba(24, 18, 42, 0.72);
+  --panel-line: rgba(168, 85, 247, 0.16);
+
+  --font-display: var(--font-cinzel), "Times New Roman", serif;
+  --font-body: var(--font-sans), system-ui, sans-serif;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg-0);
+  --color-foreground: var(--ink);
+  --font-sans: var(--font-body);
+  --font-display: var(--font-display);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  height: 100%;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  min-height: 100%;
+  color: var(--ink);
+  font-family: var(--font-body);
+  background:
+    radial-gradient(1200px 700px at 50% -10%, #241640 0%, transparent 60%),
+    radial-gradient(900px 600px at 90% 10%, #2a0f1e 0%, transparent 55%),
+    linear-gradient(180deg, var(--bg-1) 0%, var(--bg-0) 100%);
+  background-attachment: fixed;
+  overflow-x: hidden;
+}
+
+/* Yıldızlı + sisli atmosfer katmanı */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background-image:
+    radial-gradient(1.5px 1.5px at 20% 30%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1.5px 1.5px at 75% 15%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 40% 70%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 88% 60%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 12% 85%, rgba(255, 255, 255, 0.4), transparent),
+    radial-gradient(1px 1px at 60% 45%, rgba(255, 255, 255, 0.5), transparent);
+  animation: twinkle 6s ease-in-out infinite;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: -20%;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(60% 40% at 50% 50%, rgba(124, 58, 237, 0.08), transparent 70%);
+  animation: drift 18s ease-in-out infinite alternate;
+}
+
+#__next,
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ------------------------- Tipografi ------------------------- */
+.font-display {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+.title-glow {
+  text-shadow: 0 0 24px rgba(168, 85, 247, 0.55), 0 0 4px rgba(239, 68, 68, 0.4);
+}
+
+/* --------------------------- Panel --------------------------- */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 20px;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 10px 40px -12px rgba(0, 0, 0, 0.7), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.panel-tight {
+  border-radius: 16px;
+}
+
+/* --------------------------- Butonlar --------------------------- */
+.btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-weight: 700;
+  border-radius: 16px;
+  padding: 0.95rem 1.25rem;
+  transition: transform 0.12s ease, filter 0.2s ease, box-shadow 0.2s ease;
+  user-select: none;
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.btn:active {
+  transform: translateY(2px) scale(0.985);
+}
+.btn:disabled {
+  opacity: 0.4;
+  filter: grayscale(0.4);
+}
+.btn-lg {
+  padding: 1.1rem 1.4rem;
+  font-size: 1.1rem;
+  border-radius: 18px;
+}
+
+.btn-blood {
+  background: linear-gradient(180deg, #f05252, #b91c1c);
+  box-shadow: 0 10px 24px -8px rgba(239, 68, 68, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.btn-violet {
+  background: linear-gradient(180deg, #a855f7, #6d28d9);
+  box-shadow: 0 10px 24px -8px rgba(168, 85, 247, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.btn-emerald {
+  background: linear-gradient(180deg, #34d399, #059669);
+  box-shadow: 0 10px 24px -8px rgba(52, 211, 153, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+}
+.btn-amber {
+  background: linear-gradient(180deg, #fbbf24, #d97706);
+  box-shadow: 0 10px 24px -8px rgba(245, 158, 11, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  color: #2b1a02;
+}
+.btn-moon {
+  background: linear-gradient(180deg, #22d3ee, #0891b2);
+  box-shadow: 0 10px 24px -8px rgba(34, 211, 238, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  color: #04252b;
+}
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--ink);
+  box-shadow: none;
+}
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.09);
+}
+
+/* --------------------------- Seçim kartları --------------------------- */
+.pick {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 0.4rem;
+  padding: 0.9rem 0.6rem;
+  border-radius: 16px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  transition: transform 0.12s ease, border-color 0.2s ease, background 0.2s ease;
+  min-height: 58px;
+}
+.pick:active {
+  transform: scale(0.96);
+}
+.pick-on {
+  border-color: var(--sel, var(--violet));
+  background: color-mix(in srgb, var(--sel, var(--violet)) 22%, transparent);
+  box-shadow: 0 0 0 1px var(--sel, var(--violet)), 0 8px 24px -10px var(--sel, var(--violet));
+}
+
+/* --------------------------- Rozet --------------------------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+/* --------------------------- Inputlar --------------------------- */
+.input {
+  width: 100%;
+  border-radius: 16px;
+  border: 1.5px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.045);
+  padding: 1rem 1.15rem;
+  font-size: 1.05rem;
+  color: var(--ink);
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+}
+.input::placeholder {
+  color: var(--faint);
+}
+.input:focus {
+  border-color: var(--violet);
+  background: rgba(168, 85, 247, 0.08);
+  box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.16);
+}
+.code-input {
+  text-align: center;
+  letter-spacing: 0.42em;
+  padding-left: 0.42em;
+  font-weight: 800;
+  font-size: 1.9rem;
+  font-family: var(--font-mono, ui-monospace, monospace);
+}
+
+/* --------------------------- Üst çubuk / ikon buton --------------------------- */
+.iconbtn {
+  display: inline-grid;
+  place-items: center;
+  height: 42px;
+  width: 42px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-size: 1.15rem;
+  transition: transform 0.12s ease, background 0.2s ease;
+}
+.iconbtn:active {
+  transform: scale(0.9);
+}
+
+/* Kod rozeti (moderatör paylaşır) */
+.code-chip {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  letter-spacing: 0.35em;
+  padding-left: 0.35em;
+  font-weight: 800;
+}
+
+/* Butonlara hafif parlaklık ve daha belirgin basılma hissi */
+.btn:hover {
+  filter: brightness(1.06);
+}
+.btn::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 45%);
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+/* --------------------------- Gece/gündüz sahnesi --------------------------- */
+.scene {
+  position: fixed;
+  inset: 0;
+  z-index: -1; /* içeriğin ARKASINDA kalsın (paneller üstte görünür) */
+  pointer-events: none;
+  overflow: hidden;
+}
+.disc {
+  position: absolute;
+  border-radius: 50%;
+  top: 5%;
+  right: 11%;
+}
+.moon-disc {
+  width: 80px;
+  height: 80px;
+  background: radial-gradient(circle at 36% 34%, #f8fafc, #cbd5e1 58%, #8b93a7);
+  box-shadow: 0 0 55px 12px rgba(203, 213, 225, 0.3), inset -9px -7px 0 rgba(15, 12, 30, 0.18);
+}
+.sun-disc {
+  width: 92px;
+  height: 92px;
+  background: radial-gradient(circle at 40% 40%, #fff7ed, #fbbf24 52%, #f97316);
+  box-shadow: 0 0 90px 26px rgba(251, 158, 11, 0.45);
+}
+
+/* --------------------------- Animasyonlar --------------------------- */
+@keyframes spinSlow {
+  to { transform: rotate(360deg); }
+}
+.spin-slow { animation: spinSlow 22s linear infinite; }
+@keyframes twinkle {
+  0%, 100% { opacity: 0.65; }
+  50% { opacity: 1; }
+}
+@keyframes drift {
+  0% { transform: translate3d(-4%, -2%, 0); }
+  100% { transform: translate3d(4%, 3%, 0); }
+}
+@keyframes floatY {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.float-slow { animation: floatY 4.5s ease-in-out infinite; }
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.0); }
+  50% { box-shadow: 0 0 34px 4px rgba(168, 85, 247, 0.35); }
+}
+.pulse-glow { animation: pulseGlow 2.4s ease-in-out infinite; }
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(100deg, transparent 40%, rgba(255,255,255,0.25) 50%, transparent 60%);
+  background-size: 200% 100%;
+  animation: shimmer 2.6s linear infinite;
+}
+
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.rise-in { animation: riseIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+@keyframes moonPulse {
+  0%, 100% { filter: drop-shadow(0 0 14px rgba(34,211,238,0.5)); }
+  50% { filter: drop-shadow(0 0 30px rgba(34,211,238,0.85)); }
+}
+.moon-pulse { animation: moonPulse 3.5s ease-in-out infinite; }
+
+@keyframes sunPulse {
+  0%, 100% { filter: drop-shadow(0 0 16px rgba(245,158,11,0.55)); }
+  50% { filter: drop-shadow(0 0 34px rgba(245,158,11,0.9)); }
+}
+.sun-pulse { animation: sunPulse 3.5s ease-in-out infinite; }
+
+/* Kanlı vurgu titremesi (ölüm) */
+@keyframes bloodShake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-5px) rotate(-1deg); }
+  40% { transform: translateX(5px) rotate(1deg); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+.blood-shake { animation: bloodShake 0.5s ease-in-out; }
+
+/* Kaydırma çubuğu */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb {
+  background: rgba(168, 85, 247, 0.3);
+  border-radius: 8px;
+}
+
+/* Güvenli alan (mobil çentik) */
+.safe-b { padding-bottom: max(env(safe-area-inset-bottom), 1rem); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; }
 }
