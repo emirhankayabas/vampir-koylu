@@ -43,6 +43,7 @@ function freshGame(code: string): Game {
     _id: code,
     status: "lobby",
     mode: "phone",
+    assignMode: "random",
     phase: "night",
     dayNumber: 0,
     roles: defaultRoles(),
@@ -94,6 +95,7 @@ export async function getGame(code: string): Promise<Game | null> {
   game.doctorSelfUsed ??= [];
   game.announcement ??= null;
   game.hangedThisDay ??= false;
+  game.assignMode ??= "random";
   return game;
 }
 
@@ -218,6 +220,53 @@ export function assignRoles(game: Game): AssignResult {
   return { ok: true };
 }
 
+/**
+ * Moderatörün elle yaptığı atamaları doğrular. Her oyuncunun geçerli (aktif) bir
+ * rolü olmalı; özel rollerin atanan sayısı yapılandırmadaki adetle birebir eşleşmeli.
+ * Dolgu rolü (Köylü) sayı sınırı olmadan kalan oyunculara verilebilir.
+ */
+export function assignRolesManual(game: Game): AssignResult {
+  const active = game.roles.filter((r) => r.enabled);
+  const fill = active.find((r) => r.fill);
+  if (!fill) return { ok: false, error: "Dolgu rolü (Köylü) aktif olmalı." };
+  if (game.players.length === 0) return { ok: false, error: "Hiç oyuncu yok." };
+
+  // Seçili roller aktif olmalı (boş bırakılanlar sonradan köylüye düşer)
+  for (const p of game.players) {
+    if (p.role && !active.some((x) => x.key === p.role)) {
+      return { ok: false, error: `${p.name} için geçersiz bir rol seçili.` };
+    }
+  }
+  // Özel rollerin atanan sayısı yapılandırmadaki adetle birebir eşleşmeli
+  for (const r of active.filter((x) => !x.fill && x.count > 0)) {
+    const assigned = game.players.filter((p) => p.role === r.key).length;
+    if (assigned !== r.count) {
+      return { ok: false, error: `${r.name}: ${assigned}/${r.count} atandı — sayılar eşleşmeli.` };
+    }
+  }
+  // Adedi 0 olan özel role oyuncu atanmamalı
+  for (const r of active.filter((x) => !x.fill && x.count === 0)) {
+    if (game.players.some((p) => p.role === r.key)) {
+      return { ok: false, error: `${r.name} adedi 0 — bu role oyuncu atanamaz.` };
+    }
+  }
+  if (!game.players.some((p) => roleTeam(game, p.role) === "vampir")) {
+    return { ok: false, error: "En az bir vampir atanmalı." };
+  }
+
+  // Boş bırakılanlar dolgu rolüne (Köylü) düşer
+  game.players.forEach((p) => {
+    if (!p.role) p.role = fill.key;
+    p.alive = true;
+  });
+  return { ok: true };
+}
+
+/** Aktif dağıtım yöntemine göre rolleri atar. */
+export function assignRolesFor(game: Game): AssignResult {
+  return game.assignMode === "manual" ? assignRolesManual(game) : assignRoles(game);
+}
+
 // --- Gece motoru (telefon modu) ---
 
 /** Bu gece hangi rol gruplarının oynayacağını canlı oyunculara göre hesaplar. */
@@ -324,7 +373,7 @@ export function resolveNight(game: Game) {
   game.night.active = false;
   game.phase = "day";
   game.vote = { active: false, votes: {} };
-  game.winner = checkWinner(game);
+  finalizeWinner(game);
 }
 
 /** Bir gece aksiyonunu işler (oyuncu telefonundan). Geçerliyse ilerletir. */
@@ -436,7 +485,7 @@ export function resolveVote(game: Game): { hangedId: string | null } {
     log(game, `${victim.name} (Avcı) atış hakkı kazandı.`);
   }
 
-  game.winner = checkWinner(game);
+  finalizeWinner(game);
   return { hangedId };
 }
 
@@ -469,7 +518,7 @@ export function hunterShoot(game: Game, targetId: string | null): AssignResult {
     log(game, "Avcı atış yapmadı.");
   }
   game.pendingHunterId = null;
-  game.winner = checkWinner(game);
+  finalizeWinner(game);
   return { ok: true };
 }
 
@@ -482,6 +531,21 @@ export function checkWinner(game: Game): Team | null {
   if (vampires === 0) return "koy";
   if (vampires >= villagers) return "vampir";
   return null;
+}
+
+/**
+ * Kazananı hesaplar ve varsa oyunu otomatik bitirir. Örn. son vampir de ölünce
+ * köylüler kazanır ve oyun anında sona erer. Bekleyen avcı atışı varsa oyun
+ * bitirilmez (avcı son kurşunuyla sonucu değiştirebilir).
+ */
+export function finalizeWinner(game: Game) {
+  game.winner = checkWinner(game);
+  if (game.winner && !game.pendingHunterId && game.status === "in_progress") {
+    game.status = "ended";
+    game.vote = { active: false, votes: {} };
+    game.night.active = false;
+    log(game, game.winner === "vampir" ? "Vampirler kazandı — oyun bitti." : "Köy kazandı — oyun bitti.");
+  }
 }
 
 // --- Projeksiyonlar ---

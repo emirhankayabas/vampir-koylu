@@ -171,6 +171,11 @@ function Lobby({ view, code }: { view: ModeratorView; code: string }) {
         )}
       </Section>
 
+      <Section title="Rol Dağıtımı">
+        <AssignModeSwitch mode={game.assignMode} />
+        {game.assignMode === "manual" && <ManualAssign game={game} />}
+      </Section>
+
       {err && <p className="text-sm text-[var(--blood)]">{err}</p>}
       <div className="flex gap-2">
         <button onClick={start} disabled={game.players.length === 0} className="btn btn-emerald btn-lg flex-1">▶️ Oyunu Başlat</button>
@@ -530,6 +535,86 @@ function ModeButton({ active, onClick, label, desc }: { active: boolean; onClick
       <div className="font-semibold">{label}</div>
       <div className="mt-0.5 text-[11px] text-[var(--faint)]">{desc}</div>
     </button>
+  );
+}
+
+function AssignModeSwitch({ mode }: { mode: Game["assignMode"] }) {
+  const act = useAct();
+  const manual = mode === "manual";
+  return (
+    <div className="panel-tight flex items-center justify-between gap-3 border border-[var(--panel-line)] bg-[rgba(255,255,255,0.03)] p-3">
+      <div className="min-w-0">
+        <p className="font-semibold">{manual ? "🎯 Moderatör seçer" : "🎲 Rastgele dağıt"}</p>
+        <p className="mt-0.5 text-[11px] leading-tight text-[var(--faint)]">
+          {manual
+            ? "Her oyuncunun rolünü aşağıdan sen atarsın."
+            : "Roller başlangıçta oyunculara rastgele dağıtılır."}
+        </p>
+      </div>
+      <button
+        role="switch"
+        aria-checked={manual}
+        onClick={() => act("setAssignMode", { assignMode: manual ? "random" : "manual" })}
+        className="relative h-7 w-12 shrink-0 rounded-full transition-colors"
+        style={{ background: manual ? "var(--violet)" : "rgba(255,255,255,0.15)" }}
+      >
+        <span
+          className="absolute top-1 h-5 w-5 rounded-full bg-white transition-all"
+          style={{ left: manual ? "1.55rem" : "0.25rem" }}
+        />
+      </button>
+    </div>
+  );
+}
+
+function ManualAssign({ game }: { game: Game }) {
+  const act = useAct();
+  const roles = game.roles.filter((r) => r.enabled);
+  const specials = roles.filter((r) => !r.fill);
+  const countAssigned = (key: string) => game.players.filter((p) => p.role === key).length;
+
+  return (
+    <div className="mt-3 space-y-3">
+      <div className="flex flex-wrap gap-1.5">
+        {specials.map((r) => {
+          const n = countAssigned(r.key);
+          const ok = n === r.count;
+          const meta = roleMeta(r);
+          return (
+            <span key={r.key} className="badge" style={{ background: `${meta.accent}1e`, color: ok ? "#6ee7b7" : "#fca5a5" }}>
+              {meta.icon} {r.name} {n}/{r.count}
+            </span>
+          );
+        })}
+      </div>
+
+      {game.players.length === 0 ? (
+        <p className="rounded-xl bg-[rgba(255,255,255,0.03)] px-4 py-4 text-center text-sm text-[var(--faint)]">
+          Önce oyuncular katılmalı.
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {game.players.map((p) => (
+            <li key={p.id} className="flex items-center justify-between gap-2 rounded-xl bg-[rgba(255,255,255,0.04)] px-3 py-2">
+              <span className="min-w-0 truncate text-sm">{p.name}</span>
+              <select
+                value={p.role ?? ""}
+                onChange={(e) => act("assignRole", { targetId: p.id, roleKey: e.target.value || null })}
+                className="shrink-0 rounded-lg border border-[var(--panel-line)] bg-[rgba(0,0,0,0.35)] px-2 py-1.5 text-sm text-[var(--ink)]"
+              >
+                <option value="">— rol seç —</option>
+                {roles.map((r) => (
+                  <option key={r.key} value={r.key}>{r.name}</option>
+                ))}
+              </select>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-[11px] leading-tight text-[var(--faint)]">
+        Boş bırakılanlar otomatik <b>Köylü</b> olur. Adetleri değiştirdiysen önce <b>“Kaydet”</b>e bas — başlatınca sayılar tutmazsa uyarı gösterilir.
+      </p>
+    </div>
   );
 }
 

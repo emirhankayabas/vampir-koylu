@@ -5,8 +5,9 @@ import {
   deleteGame,
   saveGame,
   makeFreshGame,
-  assignRoles,
+  assignRolesFor,
   checkWinner,
+  finalizeWinner,
   beginNight,
   resolveNight,
   submitNightAction,
@@ -129,6 +130,30 @@ export async function POST(request: NextRequest) {
       return ok();
     }
 
+    // Rol dağıtımı rastgele mi yoksa moderatör elle mi atıyor
+    case "setAssignMode": {
+      if (game.status === "in_progress") return bad("Oyun sürerken değiştirilemez.");
+      game.assignMode = body.assignMode === "manual" ? "manual" : "random";
+      // Rastgeleye dönünce elle yapılan atamalar temizlenir
+      if (game.assignMode === "random") game.players.forEach((p) => (p.role = null));
+      await saveGame(game);
+      return ok();
+    }
+
+    // Manuel modda moderatör bir oyuncuya rol atar (lobide)
+    case "assignRole": {
+      if (game.status === "in_progress") return bad("Oyun sürerken rol değiştirilemez.");
+      const targetId = String(body.targetId ?? "");
+      const roleKey = body.roleKey ? String(body.roleKey) : null;
+      const p = game.players.find((x) => x.id === targetId);
+      if (!p) return bad("Oyuncu bulunamadı.");
+      if (roleKey && !game.roles.some((r) => r.key === roleKey && r.enabled))
+        return bad("Geçersiz rol.");
+      p.role = roleKey;
+      await saveGame(game);
+      return ok();
+    }
+
     case "saveRoles": {
       if (game.status === "in_progress") return bad("Oyun sürerken roller değiştirilemez.");
       const roles = body.roles as RoleConfig[];
@@ -166,7 +191,7 @@ export async function POST(request: NextRequest) {
     // --- Moderatör: oyun akışı ---
     case "start":
     case "newRound": {
-      const res = assignRoles(game);
+      const res = assignRolesFor(game);
       if (!res.ok) return bad(res.error!);
       game.status = "in_progress";
       game.dayNumber = 1;
@@ -239,7 +264,7 @@ export async function POST(request: NextRequest) {
         at: Date.now(),
       };
       log(game, names.length ? `Gece ${names.join(", ")} öldü.` : "Gece kimse ölmedi.");
-      game.winner = checkWinner(game);
+      finalizeWinner(game);
       await saveGame(game);
       return ok();
     }
@@ -287,7 +312,7 @@ export async function POST(request: NextRequest) {
         game.pendingHunterId = target.id;
         log(game, `${target.name} (Avcı) atış hakkı kazandı.`);
       }
-      game.winner = checkWinner(game);
+      finalizeWinner(game);
       await saveGame(game);
       return ok();
     }
@@ -313,7 +338,7 @@ export async function POST(request: NextRequest) {
       if (!p) return bad("Oyuncu bulunamadı.");
       p.alive = !p.alive;
       log(game, `${p.name} ${p.alive ? "diriltildi" : "öldürüldü"}.`);
-      game.winner = checkWinner(game);
+      finalizeWinner(game);
       await saveGame(game);
       return ok();
     }

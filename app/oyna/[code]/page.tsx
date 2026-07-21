@@ -498,7 +498,8 @@ function VotePanel({ view, selfId, code }: { view: ParticipantView; selfId: stri
     else await postAction("vote", { code, playerId: selfId, targetId });
     setBusy(false);
   }
-  const others = view.players.filter((p) => p.alive && p.id !== selfId);
+  // Ölenler hariç herkes listelenir — kendine de oy verilebilir.
+  const candidates = view.players.filter((p) => p.alive);
   const countFor = (id: string) => view.vote.tally.find((t) => t.targetId === id)?.count ?? 0;
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="panel p-5" style={{ borderColor: "rgba(245,158,11,0.4)" }}>
@@ -508,12 +509,13 @@ function VotePanel({ view, selfId, code }: { view: ParticipantView; selfId: stri
         <p className="mt-1 text-xs text-[var(--muted)]">{view.vote.count}/{view.vote.total} oy verildi</p>
       </div>
       <div className="mt-4 grid grid-cols-2 gap-2">
-        {others.map((p) => {
+        {candidates.map((p) => {
           const mine = view.vote.myVote === p.id;
           const n = countFor(p.id);
+          const isSelf = p.id === selfId;
           return (
             <button key={p.id} disabled={busy} onClick={() => vote(p.id)} className={`pick relative ${mine ? "pick-on" : ""}`} style={{ ["--sel" as string]: "#f59e0b" }}>
-              {mine && "🪢 "}{p.name}
+              {mine && "🪢 "}{p.name}{isSelf && " (sen)"}
               {n > 0 && (
                 <span
                   className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-bold"

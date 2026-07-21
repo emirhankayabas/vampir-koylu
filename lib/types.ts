@@ -5,6 +5,8 @@ export type Team = "koy" | "vampir";
 export type GameStatus = "lobby" | "in_progress" | "ended";
 export type GameMode = "phone" | "verbal";
 export type Phase = "night" | "day";
+// Rol dağıtım yöntemi: rastgele (varsayılan) veya moderatör elle atar
+export type AssignMode = "random" | "manual";
 
 // Gece sırasında aktif olan rol grupları
 export type NightRole = "vampir" | "doktor" | "medyum";
@@ -65,6 +67,7 @@ export interface Game {
   _id: string; // sabit "active"
   status: GameStatus;
   mode: GameMode;
+  assignMode: AssignMode; // rol dağıtımı rastgele mi moderatör mü seçiyor
   phase: Phase;
   dayNumber: number;
   roles: RoleConfig[];
