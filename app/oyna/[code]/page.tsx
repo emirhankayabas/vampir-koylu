@@ -170,7 +170,10 @@ export default function OynaPage() {
       <PhaseHeader view={view} />
       <RoleCard self={self} />
 
-      {!self.alive ? (
+      {turn && turn.kind === "hunter" ? (
+        // Avcı asıldı: ölü olsa bile son kurşununu kendi ekranından atar.
+        <TurnScreen key="turn-hunter" turn={turn} selfId={self.id} code={code} />
+      ) : !self.alive ? (
         <Panel key="dead" className="border-[var(--blood-deep)]">
           <div className="text-center">
             <div className="text-4xl blood-shake">💀</div>
@@ -496,6 +499,7 @@ function VotePanel({ view, selfId, code }: { view: ParticipantView; selfId: stri
     setBusy(false);
   }
   const others = view.players.filter((p) => p.alive && p.id !== selfId);
+  const countFor = (id: string) => view.vote.tally.find((t) => t.targetId === id)?.count ?? 0;
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="panel p-5" style={{ borderColor: "rgba(245,158,11,0.4)" }}>
       <div className="text-center">
@@ -506,9 +510,18 @@ function VotePanel({ view, selfId, code }: { view: ParticipantView; selfId: stri
       <div className="mt-4 grid grid-cols-2 gap-2">
         {others.map((p) => {
           const mine = view.vote.myVote === p.id;
+          const n = countFor(p.id);
           return (
-            <button key={p.id} disabled={busy} onClick={() => vote(p.id)} className={`pick ${mine ? "pick-on" : ""}`} style={{ ["--sel" as string]: "#f59e0b" }}>
+            <button key={p.id} disabled={busy} onClick={() => vote(p.id)} className={`pick relative ${mine ? "pick-on" : ""}`} style={{ ["--sel" as string]: "#f59e0b" }}>
               {mine && "🪢 "}{p.name}
+              {n > 0 && (
+                <span
+                  className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-bold"
+                  style={{ background: "#f59e0b", color: "#1a1206" }}
+                >
+                  {n}
+                </span>
+              )}
             </button>
           );
         })}

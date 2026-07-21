@@ -28,7 +28,7 @@ export function SceneBackdrop({ phase }: { phase: Phase }) {
         }}
       >
         <div className="disc sun-disc">
-          <div className="absolute inset-[-40%] spin-slow" style={{ background: "conic-gradient(from 0deg, transparent 0 8deg, rgba(251,191,36,0.22) 8deg 12deg, transparent 12deg 30deg)" }} />
+          <div className="sun-rays spin-slow" />
         </div>
       </motion.div>
     </div>

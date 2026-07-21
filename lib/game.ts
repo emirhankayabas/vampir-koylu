@@ -53,6 +53,7 @@ function freshGame(code: string): Game {
     doctorSelfUsed: [],
     announcement: null,
     pendingHunterId: null,
+    hangedThisDay: false,
     winner: null,
     log: [],
     version: 1,
@@ -92,6 +93,7 @@ export async function getGame(code: string): Promise<Game | null> {
   game.mediumLog ??= [];
   game.doctorSelfUsed ??= [];
   game.announcement ??= null;
+  game.hangedThisDay ??= false;
   return game;
 }
 
@@ -234,6 +236,7 @@ export function beginNight(game: Game) {
   game.phase = "night";
   game.vote = { active: false, votes: {} };
   game.announcement = null;
+  game.hangedThisDay = false;
   game.night = {
     active: true,
     order: computeNightOrder(game),
@@ -421,7 +424,10 @@ export function resolveVote(game: Game): { hangedId: string | null } {
     dead: victim ? { name: victim.name, roleName: shown, team: role?.team ?? "koy" } : null,
     at: Date.now(),
   };
-  if (victim) log(game, `${victim.name} asıldı (${role?.name ?? "?"}).`);
+  if (victim) {
+    log(game, `${victim.name} asıldı (${role?.name ?? "?"}).`);
+    game.hangedThisDay = true;
+  }
 
   // Avcı asıldıysa atış hakkı kazanır (yalnızca oyla asılınca).
   // Rolü yine "Köylü" görünür; avcı olduğu ancak ateş edince ortaya çıkar.
@@ -518,9 +524,10 @@ export function moderatorView(game: Game): ModeratorView {
 }
 
 function turnFor(game: Game, self: Player): TurnInfo | null {
-  if (game.status !== "in_progress" || !self.alive) return null;
+  if (game.status !== "in_progress") return null;
 
-  // Avcı atışı her şeyin önünde
+  // Avcı atışı her şeyin önünde — avcı asıldığı için artık ölü olsa bile
+  // atış hakkını kendi ekranından görür.
   if (game.pendingHunterId === self.id) {
     return {
       kind: "hunter",
@@ -531,6 +538,7 @@ function turnFor(game: Game, self: Player): TurnInfo | null {
     };
   }
 
+  if (!self.alive) return null;
   if (game.mode !== "phone" || game.phase !== "night" || !game.night.active) return null;
   const cur = game.night.order[game.night.step];
   const role = roleOf(game, self.role);
@@ -591,6 +599,13 @@ export function participantView(game: Game, playerId: string | null): Participan
           .map((r) => ({ targetName: r.targetName, team: r.team, day: r.day }))
       : [];
 
+  // Oylama sırasında her adayın aldığı oy sayısı (herkes canlı görür)
+  const voteCounts = new Map<string, number>();
+  for (const target of Object.values(game.vote.votes)) {
+    voteCounts.set(target, (voteCounts.get(target) ?? 0) + 1);
+  }
+  const voteTally = [...voteCounts.entries()].map(([targetId, count]) => ({ targetId, count }));
+
   return {
     role: "participant",
     forPlayerId: playerId ?? null,
@@ -615,6 +630,7 @@ export function participantView(game: Game, playerId: string | null): Participan
       myVote: playerId ? game.vote.votes[playerId] ?? null : null,
       count: Object.keys(game.vote.votes).length,
       total: alivePlayers(game).length,
+      tally: voteTally,
     },
     turn: self ? turnFor(game, self) : null,
     nightActive: game.mode === "phone" && game.phase === "night" && game.night.active,

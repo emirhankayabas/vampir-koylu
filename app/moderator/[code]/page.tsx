@@ -269,7 +269,25 @@ function InProgress({ view }: { view: ModeratorView }) {
               {!game.vote.active ? (
                 <div className="space-y-2">
                   <button onClick={() => act("voteStart")} className="btn btn-amber w-full">🗳️ Oylamayı başlat</button>
-                  <button onClick={() => act("nextNight")} className="btn btn-violet w-full">🌙 Yeni geceye geç</button>
+                  {(() => {
+                    const canNext = game.hangedThisDay || !!game.winner;
+                    return (
+                      <>
+                        <button
+                          onClick={() => act("nextNight")}
+                          disabled={!canNext}
+                          className="btn btn-violet w-full"
+                        >
+                          🌙 Yeni geceye geç
+                        </button>
+                        {!canNext && (
+                          <p className="text-center text-xs text-[var(--faint)]">
+                            Yeni geceye geçmek için önce bir kişi asılmalı.
+                          </p>
+                        )}
+                      </>
+                    );
+                  })()}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -292,11 +310,15 @@ function InProgress({ view }: { view: ModeratorView }) {
           <div className="mb-3 flex gap-2">
             <button
               onClick={() => act(game.phase === "night" ? "nightResolve" : "nextNight", game.phase === "night" ? { deaths: [] } : {})}
+              disabled={game.phase === "day" && !game.hangedThisDay && !game.winner}
               className="btn btn-ghost flex-1 text-sm"
             >
               {game.phase === "night" ? "Gündüze geç" : "Yeni geceye geç"}
             </button>
           </div>
+          {game.phase === "day" && !game.hangedThisDay && !game.winner && (
+            <p className="mb-3 text-center text-xs text-[var(--faint)]">Yeni geceye geçmek için önce bir kişi asılmalı.</p>
+          )}
           {game.phase === "night" && (
             <Section title="🌙 Gece — ölenleri seç">
               <div className="grid grid-cols-2 gap-2">

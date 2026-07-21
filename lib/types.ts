@@ -75,6 +75,7 @@ export interface Game {
   doctorSelfUsed: string[]; // kendini koruma hakkını kullanan doktor id'leri (oyun boyu 1 kez)
   announcement: Announcement | null;
   pendingHunterId: string | null; // asılan avcı, atış hakkı bekliyor
+  hangedThisDay: boolean; // bu gündüz birisi asıldı mı (yeni geceye geçiş şartı)
   winner: Team | null;
   log: { text: string; at: number }[];
   version: number; // her değişimde artar (SSE değişiklik tespiti)
@@ -127,7 +128,14 @@ export interface ParticipantView {
   dayNumber: number;
   self: ParticipantSelf | null;
   players: { id: string; name: string; alive: boolean }[];
-  vote: { active: boolean; myVote: string | null; count: number; total: number };
+  vote: {
+    active: boolean;
+    myVote: string | null;
+    count: number;
+    total: number;
+    // Oylama sırasında her adayın aldığı oy sayısı (herkes canlı görür)
+    tally: { targetId: string; count: number }[];
+  };
   turn: TurnInfo | null; // sıra bendeyse dolu
   nightActive: boolean;
   announcement: Announcement | null;

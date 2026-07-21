@@ -172,6 +172,7 @@ export async function POST(request: NextRequest) {
       game.dayNumber = 1;
       game.winner = null;
       game.pendingHunterId = null;
+      game.hangedThisDay = false;
       game.announcement = null;
       game.vote = { active: false, votes: {} };
       game.mediumLog = [];
@@ -190,6 +191,10 @@ export async function POST(request: NextRequest) {
     case "nextNight": {
       if (game.status !== "in_progress") return bad("Oyun devam etmiyor.");
       if (game.pendingHunterId) return bad("Önce avcı atışı beklenmeli.");
+      // Bir kişi asılmadan yeni geceye geçilemez (oyun bitmediyse).
+      if (!game.winner && !game.hangedThisDay) {
+        return bad("Yeni geceye geçmeden önce bir kişi asılmalı.");
+      }
       game.dayNumber += 1;
       if (game.mode === "phone") {
         beginNight(game);
@@ -198,6 +203,7 @@ export async function POST(request: NextRequest) {
         game.night.active = false;
         game.vote = { active: false, votes: {} };
         game.announcement = null;
+        game.hangedThisDay = false;
       }
       log(game, `${game.dayNumber}. gece başladı.`);
       await saveGame(game);
@@ -276,6 +282,7 @@ export async function POST(request: NextRequest) {
         at: Date.now(),
       };
       log(game, `${target.name} asıldı.`);
+      game.hangedThisDay = true;
       if (role?.special === "avci") {
         game.pendingHunterId = target.id;
         log(game, `${target.name} (Avcı) atış hakkı kazandı.`);
@@ -326,6 +333,7 @@ export async function POST(request: NextRequest) {
       game.status = "lobby";
       game.winner = null;
       game.pendingHunterId = null;
+      game.hangedThisDay = false;
       game.vote = { active: false, votes: {} };
       game.night.active = false;
       game.announcement = null;

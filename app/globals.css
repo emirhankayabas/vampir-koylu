@@ -300,6 +300,20 @@ body > * {
   background: radial-gradient(circle at 40% 40%, #fff7ed, #fbbf24 52%, #f97316);
   box-shadow: 0 0 90px 26px rgba(251, 158, 11, 0.45);
 }
+/* Güneş huzmeleri: her yöne eşit, ince ışınlar; kenarlara doğru yumuşar. */
+.sun-rays {
+  position: absolute;
+  inset: -55%;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    transparent 0deg 9deg,
+    rgba(251, 191, 36, 0.16) 9deg 11deg,
+    transparent 11deg 18deg
+  );
+  -webkit-mask: radial-gradient(circle, transparent 30%, #000 46%, transparent 72%);
+  mask: radial-gradient(circle, transparent 30%, #000 46%, transparent 72%);
+}
 
 /* --------------------------- Animasyonlar --------------------------- */
 @keyframes spinSlow {
