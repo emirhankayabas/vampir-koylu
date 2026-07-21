@@ -10,6 +10,8 @@ import type {
   TurnInfo,
   Announcement,
   Player,
+  RoundEvent,
+  RoundDeath,
 } from "@/lib/types";
 import { NIGHT_ORDER } from "@/lib/roles";
 
@@ -23,6 +25,10 @@ export function defaultRoles(): RoleConfig[] {
     { key: "doktor", name: "Doktor", team: "koy", enabled: true, count: 1, builtin: true, special: "doktor" },
     { key: "medyum", name: "Medyum", team: "koy", enabled: true, count: 1, builtin: true, special: "medyum" },
     { key: "avci", name: "Avcı", team: "koy", enabled: true, count: 1, builtin: true, special: "avci" },
+    // Tarafsız Soytarı — varsayılan kapalı (count 0). Moderatör adedini artırınca oyuna girer.
+    // team "koy": köylü gibi görünür (medyum/ölüm duyurusunda masum çıkar) ama kendi kazanma
+    // koşulu vardır: gündüz oylamasında astırılırsa tek başına kazanır.
+    { key: "soytari", name: "Soytarı", team: "koy", enabled: true, count: 0, builtin: true, special: "soytari" },
     { key: "koylu", name: "Köylü", team: "koy", enabled: true, count: 0, builtin: true, fill: true },
   ];
 }
@@ -57,6 +63,7 @@ function freshGame(code: string): Game {
     hangedThisDay: false,
     winner: null,
     log: [],
+    roundLog: [],
     version: 1,
     updatedAt: Date.now(),
   };
@@ -96,6 +103,7 @@ export async function getGame(code: string): Promise<Game | null> {
   game.announcement ??= null;
   game.hangedThisDay ??= false;
   game.assignMode ??= "random";
+  game.roundLog ??= [];
   return game;
 }
 
@@ -136,6 +144,13 @@ export function log(game: Game, text: string) {
   game.log = game.log.slice(0, 60);
 }
 
+/** Moderatör tur raporuna bir olay ekler (en yeni üstte, en fazla 40 tur). */
+export function recordRound(game: Game, ev: RoundEvent) {
+  game.roundLog ??= [];
+  game.roundLog.unshift(ev);
+  game.roundLog = game.roundLog.slice(0, 40);
+}
+
 // --- Yardımcılar ---
 
 function shuffle<T>(arr: T[]): T[] {
@@ -163,7 +178,7 @@ function maskedRoleName(game: Game, roleKey: string | null): string {
   return roleTeam(game, roleKey) === "vampir" ? "Vampir" : "Köylü";
 }
 
-function specialOf(game: Game, p: Player): "avci" | "doktor" | "medyum" | undefined {
+function specialOf(game: Game, p: Player): "avci" | "doktor" | "medyum" | "soytari" | undefined {
   return roleOf(game, p.role)?.special;
 }
 
@@ -340,6 +355,7 @@ export function resolveNight(game: Game) {
 
   const lines: string[] = [];
   let dead: Announcement["dead"] = null;
+  const deaths: RoundDeath[] = [];
 
   if (target && !saved) {
     const victim = killPlayer(game, target);
@@ -349,6 +365,7 @@ export function resolveNight(game: Game) {
       lines.push(`${victim.name} bu gece öldürüldü.`);
       lines.push(`Rolü: ${shown}`);
       dead = { name: victim.name, roleName: shown, team: role?.team ?? "koy" };
+      deaths.push({ name: victim.name, role: role?.name ?? "?", team: role?.team ?? "koy" });
       log(game, `Gece ${victim.name} öldü (${role?.name ?? "?"}).`);
     } else {
       lines.push("Bu gece kimse ölmedi.");
@@ -362,6 +379,21 @@ export function resolveNight(game: Game) {
     lines.push("Bu gece kimse ölmedi.");
     log(game, "Sakin bir geceydi.");
   }
+
+  // Moderatör tur raporu: gecenin gizli detayları (hedef, koruma, medyum sonucu)
+  const medId = game.night.mediumTarget;
+  const medPlayer = medId ? game.players.find((p) => p.id === medId) : null;
+  recordRound(game, {
+    day: game.dayNumber,
+    kind: "night",
+    at: Date.now(),
+    vampTarget: target ? playerName(game, target) : null,
+    doctorTarget: game.night.doctorTarget ? playerName(game, game.night.doctorTarget) : null,
+    saved,
+    mediumTarget: medPlayer ? medPlayer.name : null,
+    mediumResult: medPlayer ? roleTeam(game, medPlayer.role) : null,
+    deaths,
+  });
 
   game.announcement = {
     kind: "morning",
@@ -461,6 +493,30 @@ export function resolveVote(game: Game): { hangedId: string | null } {
 
   const victim = killPlayer(game, hangedId);
   const role = victim ? roleOf(game, victim.role) : null;
+
+  // Soytarı astırıldıysa: tek başına kazanır ve oyun anında biter.
+  if (victim && role?.special === "soytari") {
+    game.winner = "soytari";
+    game.status = "ended";
+    game.night.active = false;
+    game.announcement = {
+      kind: "hang",
+      title: "Soytarının Oyunu",
+      lines: [`${victim.name} asıldı… ama o bir Soytarıydı!`, "Soytarı kazandı 🃏"],
+      dead: { name: victim.name, roleName: "Soytarı", team: role.team },
+      at: Date.now(),
+    };
+    log(game, `${victim.name} (Soytarı) astırıldı — Soytarı kazandı.`);
+    game.hangedThisDay = true;
+    recordRound(game, {
+      day: game.dayNumber,
+      kind: "hang",
+      at: Date.now(),
+      deaths: [{ name: victim.name, role: "Soytarı", team: role.team }],
+    });
+    return { hangedId };
+  }
+
   const shown = victim ? maskedRoleName(game, victim.role) : "";
   const lines = victim
     ? [`${victim.name} oy çokluğuyla asıldı.`, `Rolü: ${shown}`]
@@ -476,6 +532,12 @@ export function resolveVote(game: Game): { hangedId: string | null } {
   if (victim) {
     log(game, `${victim.name} asıldı (${role?.name ?? "?"}).`);
     game.hangedThisDay = true;
+    recordRound(game, {
+      day: game.dayNumber,
+      kind: "hang",
+      at: Date.now(),
+      deaths: [{ name: victim.name, role: role?.name ?? "?", team: role?.team ?? "koy" }],
+    });
   }
 
   // Avcı asıldıysa atış hakkı kazanır (yalnızca oyla asılınca).
@@ -506,6 +568,12 @@ export function hunterShoot(game: Game, targetId: string | null): AssignResult {
         at: Date.now(),
       };
       log(game, `Avcı ${victim.name}'i vurdu (${role?.name ?? "?"}).`);
+      recordRound(game, {
+        day: game.dayNumber,
+        kind: "hunter",
+        at: Date.now(),
+        deaths: [{ name: victim.name, role: role?.name ?? "?", team: role?.team ?? "koy" }],
+      });
     }
   } else {
     game.announcement = {
@@ -539,6 +607,8 @@ export function checkWinner(game: Game): Team | null {
  * bitirilmez (avcı son kurşunuyla sonucu değiştirebilir).
  */
 export function finalizeWinner(game: Game) {
+  // Soytarı astırılıp kazandıysa sonuç kilitlidir — köy/vampir hesabıyla ezilemez.
+  if (game.winner === "soytari") return;
   game.winner = checkWinner(game);
   if (game.winner && !game.pendingHunterId && game.status === "in_progress") {
     game.status = "ended";
@@ -713,7 +783,9 @@ export function participantView(game: Game, playerId: string | null): Participan
           id: p.id,
           name: p.name,
           roleName: p.role ? roleOf(game, p.role)?.name ?? null : null,
+          roleKey: p.role,
           team: roleTeam(game, p.role),
+          special: roleOf(game, p.role)?.special,
           alive: p.alive,
         }))
       : null,

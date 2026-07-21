@@ -1,101 +1,49 @@
-import { NextRequest } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { getGame, getVersion, moderatorView, participantView } from "@/lib/game";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
 
-// Sunucudan istemciye canlı durum akışı (Server-Sent Events).
-// Vercel ücretsiz planında kalıcı WebSocket olmadığı için SSE kullanıyoruz:
-// bağlantı açık tutulur, MongoDB'deki `version` alanı hafifçe pollenir,
-// değiştiğinde yeni durum push edilir. Bağlantı ~4 dk sonra kapanır,
-// tarayıcının EventSource'u otomatik yeniden bağlanır.
-
-const POLL_MS = 500;
-const MAX_LIFETIME_MS = 4 * 60 * 1000;
+// Canlı durum — kısa "poll" (yoklama) uç noktası.
+//
+// NEDEN SSE DEĞİL: Vercel ücretsiz (Hobby) planında serverless fonksiyonlar
+// uzun ömürlü değildir; dakikalarca açık tutulan bir SSE akışı ~60 sn sonra
+// kesilir ya da edge katmanında tamponlanıp sessizce ölür. Bu yüzden bazı
+// oyuncularda durum güncellenmez ve sayfayı yenilemeleri gerekirdi.
+//
+// ÇÖZÜM: İstemci her ~1.2 sn'de bir bu uç noktayı çağırır. İstek kısa sürer
+// ve hemen döner — serverless'in en iyi yaptığı şey budur. İstemci son
+// gördüğü sürümü `v` ile gönderir; sürüm değişmediyse sadece `{ same: true }`
+// döneriz (küçük yanıt, gereksiz projeksiyon yok).
 
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const isModerator = url.searchParams.get("role") === "moderator";
   const playerId = url.searchParams.get("playerId");
   const code = url.searchParams.get("code") ?? "";
+  const knownVersion = Number(url.searchParams.get("v") ?? "-1");
 
-  const encoder = new TextEncoder();
+  const headers = {
+    "Cache-Control": "no-store, no-cache, must-revalidate",
+    "CDN-Cache-Control": "no-store",
+    "Vercel-CDN-Cache-Control": "no-store",
+  };
 
-  const stream = new ReadableStream({
-    async start(controller) {
-      let closed = false;
-      const send = (data: unknown) => {
-        if (closed) return;
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-      };
-      // Kalp atışı: yorum yerine veri mesajı gönderiyoruz ki istemci de
-      // bağlantının canlı olduğunu görebilsin (watchdog için). Durum değil.
-      const ping = () => {
-        if (closed) return;
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ hb: 1 })}\n\n`));
-      };
-
-      const project = async () => {
-        const game = await getGame(code);
-        // version 0 = "oda yok"; getVersion de eksik odada 0 döndürür, böylece
-        // notfound tekrar tekrar gönderilmez (yalnızca durum değişince).
-        if (!game) return { notfound: true, version: 0 } as const;
-        return isModerator ? moderatorView(game) : participantView(game, playerId);
-      };
-
-      // İlk durum
-      let lastVersion = -1;
-      try {
-        const view = await project();
-        lastVersion = view.version;
-        send(view);
-      } catch {
-        send({ error: "db" });
-      }
-
-      const start = Date.now();
-      let heartbeat = 0;
-
-      const interval = setInterval(async () => {
-        if (closed) return;
-        try {
-          const v = await getVersion(code);
-          if (v !== lastVersion) {
-            const view = await project();
-            lastVersion = view.version;
-            send(view);
-          } else if (++heartbeat % 10 === 0) {
-            ping(); // ~5 sn'de bir bağlantıyı canlı tut + istemci watchdog'unu besle
-          }
-        } catch {
-          // yut, sonraki turda tekrar dener
-        }
-        if (Date.now() - start > MAX_LIFETIME_MS) {
-          cleanup();
-        }
-      }, POLL_MS);
-
-      const cleanup = () => {
-        if (closed) return;
-        closed = true;
-        clearInterval(interval);
-        try {
-          controller.close();
-        } catch {
-          /* zaten kapalı */
-        }
-      };
-
-      request.signal.addEventListener("abort", cleanup);
-    },
-  });
-
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
+  try {
+    // Önce yalnızca sürümü oku (hafif sorgu). Değişmediyse projeksiyon yapma.
+    const version = await getVersion(code);
+    if (version === 0) {
+      return NextResponse.json({ notfound: true, version: 0 }, { headers });
+    }
+    if (version === knownVersion) {
+      return NextResponse.json({ same: true, version }, { headers });
+    }
+    const game = await getGame(code);
+    if (!game) {
+      return NextResponse.json({ notfound: true, version: 0 }, { headers });
+    }
+    const view = isModerator ? moderatorView(game) : participantView(game, playerId);
+    return NextResponse.json(view, { headers });
+  } catch {
+    return NextResponse.json({ error: "db" }, { headers });
+  }
 }

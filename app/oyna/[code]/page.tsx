@@ -7,6 +7,17 @@ import { motion } from "motion/react";
 import { useStream, postAction, usePlayerId, savePlayerId, clearPlayerId } from "@/app/_lib/client";
 import { SceneBackdrop, TopBar, Spinner } from "@/app/_lib/ui";
 import { roleMeta } from "@/lib/roles";
+import {
+  RoleGlyph, Burst, CrownIcon, BatIcon, JesterIcon, MoonIcon, SunIcon, SkullIcon,
+  BallotIcon, CheckIcon, CrossIcon, CrystalIcon, CrosshairIcon,
+} from "@/app/_lib/icons";
+
+const TURN_ICON: Record<TurnInfo["kind"], (p: { size?: number; strokeWidth?: number }) => React.ReactElement> = {
+  vampir: (p) => <BatIcon {...p} />,
+  doktor: (p) => <CrossIcon {...p} />,
+  medyum: (p) => <CrystalIcon {...p} />,
+  hunter: (p) => <CrosshairIcon {...p} />,
+};
 import type { ParticipantView, TurnInfo, Team, Announcement } from "@/lib/types";
 
 function buzz(ms = 12) {
@@ -176,7 +187,7 @@ export default function OynaPage() {
       ) : !self.alive ? (
         <Panel key="dead" className="border-[var(--blood-deep)]">
           <div className="text-center">
-            <div className="text-4xl blood-shake">💀</div>
+            <div className="blood-shake mx-auto grid h-14 w-14 place-items-center text-[var(--blood)]"><SkullIcon size={44} strokeWidth={1.7} /></div>
             <p className="mt-2 font-bold text-[var(--blood)]">Öldün</p>
             <p className="mt-1 text-sm text-[var(--muted)]">Ruhun köyü izliyor. Kimseye ipucu verme!</p>
           </div>
@@ -205,8 +216,8 @@ function PhaseHeader({ view }: { view: ParticipantView }) {
         <motion.button
           whileTap={{ scale: 0.82, rotate: night ? -20 : 20 }}
           onClick={() => buzz(10)}
-          className={`grid h-12 w-12 place-items-center rounded-2xl text-3xl ${night ? "moon-pulse" : "sun-pulse"}`}
-          style={{ background: night ? "rgba(34,211,238,0.10)" : "rgba(245,158,11,0.12)" }}
+          className={`grid h-12 w-12 place-items-center rounded-2xl ${night ? "moon-pulse" : "sun-pulse"}`}
+          style={{ background: night ? "rgba(34,211,238,0.10)" : "rgba(245,158,11,0.12)", color: night ? "#22d3ee" : "#f59e0b" }}
           aria-label={night ? "Gece" : "Gündüz"}
         >
           <motion.span
@@ -215,7 +226,7 @@ function PhaseHeader({ view }: { view: ParticipantView }) {
             animate={{ scale: 1, rotate: 0, opacity: 1 }}
             transition={{ type: "spring", stiffness: 200, damping: 15 }}
           >
-            {night ? "🌙" : "☀️"}
+            {night ? <MoonIcon size={26} /> : <SunIcon size={26} />}
           </motion.span>
         </motion.button>
         <div>
@@ -238,6 +249,7 @@ function RoleCard({ self }: { self: NonNullable<ParticipantView["self"]> }) {
   const [showAbility, setShowAbility] = useState(false);
   const meta = roleMeta(self.role);
   const evil = self.role?.team === "vampir";
+  const neutral = self.role?.special === "soytari";
   const accent = meta.accent;
 
   useEffect(() => {
@@ -260,7 +272,7 @@ function RoleCard({ self }: { self: NonNullable<ParticipantView["self"]> }) {
         style={{ borderColor: "rgba(168,85,247,0.3)" }}
       >
         <motion.div
-          className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl text-3xl"
+          className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl text-2xl"
           style={{ background: "rgba(168,85,247,0.14)", border: "1px solid rgba(168,85,247,0.4)" }}
           animate={{ opacity: [0.7, 1, 0.7] }}
           transition={{ duration: 2.5, repeat: Infinity }}
@@ -268,10 +280,10 @@ function RoleCard({ self }: { self: NonNullable<ParticipantView["self"]> }) {
           👁️
         </motion.div>
         <div className="min-w-0 flex-1">
-          <p className="font-display text-lg font-black">Rolün gizli</p>
-          <p className="text-xs text-[var(--muted)]">Yan yana oynarken başkaları görmesin. Görmek için <b>dokun</b>.</p>
+          <p className="font-display text-lg font-black leading-tight">Rolün gizli</p>
+          <p className="mt-1 text-xs leading-snug text-[var(--muted)]">Yan yana oynarken başkaları görmesin. Görmek için <b>dokun</b>.</p>
+          <span className="badge mt-2 inline-flex" style={{ background: "rgba(168,85,247,0.16)", color: "#d8b4fe" }}>👁 Göster</span>
         </div>
-        <span className="badge shrink-0" style={{ background: "rgba(168,85,247,0.16)", color: "#d8b4fe" }}>👁 Göster</span>
       </motion.button>
     );
   }
@@ -288,12 +300,12 @@ function RoleCard({ self }: { self: NonNullable<ParticipantView["self"]> }) {
       <div className="pointer-events-none absolute -right-8 -top-10 h-40 w-40 rounded-full opacity-30 blur-2xl" style={{ background: accent }} />
       <div className="flex items-center gap-4">
         <motion.div
-          className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl text-4xl"
-          style={{ background: `${accent}22`, border: `1px solid ${accent}55` }}
+          className="grid h-16 w-16 shrink-0 place-items-center rounded-2xl"
+          style={{ background: `${accent}22`, border: `1px solid ${accent}55`, color: accent }}
           animate={{ scale: [1, 1.06, 1] }}
           transition={{ duration: 3, repeat: Infinity }}
         >
-          {meta.icon}
+          <RoleGlyph role={self.role} size={34} strokeWidth={1.7} />
         </motion.div>
         <div className="min-w-0 flex-1">
           <p className="text-xs uppercase tracking-wider text-[var(--faint)]">Rolün</p>
@@ -304,13 +316,24 @@ function RoleCard({ self }: { self: NonNullable<ParticipantView["self"]> }) {
       </div>
 
       <div className="mt-3 flex items-center gap-2">
-        <span className="badge" style={{ background: evil ? "rgba(239,68,68,0.16)" : "rgba(52,211,153,0.16)", color: evil ? "#fca5a5" : "#6ee7b7" }}>
-          {evil ? "🧛 Vampir takımı" : "🏡 Köy takımı"}
-        </span>
+        {neutral ? (
+          <span className="badge" style={{ background: "rgba(236,72,153,0.18)", color: "#f9a8d4" }}>🃏 Tarafsız · Soytarı</span>
+        ) : (
+          <span className="badge" style={{ background: evil ? "rgba(239,68,68,0.16)" : "rgba(52,211,153,0.16)", color: evil ? "#fca5a5" : "#6ee7b7" }}>
+            {evil ? "🧛 Vampir takımı" : "🏡 Köy takımı"}
+          </span>
+        )}
         <button onClick={() => setShowAbility((s) => !s)} className="badge" style={{ background: "rgba(255,255,255,0.06)", color: "var(--muted)" }}>
           {showAbility ? "Yeteneği gizle" : "Yeteneği gör"}
         </button>
       </div>
+
+      {neutral && (
+        <div className="mt-3 rounded-xl border p-3" style={{ borderColor: "rgba(236,72,153,0.35)", background: "rgba(236,72,153,0.08)" }}>
+          <p className="text-xs font-semibold" style={{ color: "#f9a8d4" }}>🎯 Amacın</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Gündüz oylamasında <b className="text-[var(--ink)]">kendini astır</b>. Başarırsan tek başına kazanırsın! Vampirler seni öldürürse ya da bir taraf kazanırsa kaybedersin.</p>
+        </div>
+      )}
 
       <motion.div animate={{ height: showAbility ? "auto" : 0, opacity: showAbility ? 1 : 0 }} initial={false} transition={{ duration: 0.28 }} className="overflow-hidden">
         <p className="mt-3 rounded-xl bg-[rgba(255,255,255,0.04)] p-3 text-sm text-[var(--muted)]">{meta.ability}</p>
@@ -422,7 +445,7 @@ function TurnScreen({ turn, selfId, code }: { turn: TurnInfo; selfId: string; co
       style={{ borderColor: `${theme.color}66` }}
     >
       <div className="text-center">
-        <motion.div className="text-5xl" animate={{ scale: [1, 1.12, 1] }} transition={{ duration: 1.8, repeat: Infinity }}>{theme.icon}</motion.div>
+        <motion.div className="mx-auto grid h-14 w-14 place-items-center" style={{ color: theme.color }} animate={{ scale: [1, 1.12, 1] }} transition={{ duration: 1.8, repeat: Infinity }}>{TURN_ICON[turn.kind]({ size: 46, strokeWidth: 1.7 })}</motion.div>
         <h3 className="font-display mt-2 text-2xl font-black" style={{ color: theme.color }}>{theme.title}</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">{theme.hint}</p>
         {turn.note && <p className="mt-1 text-xs text-[var(--faint)]">💡 {turn.note}</p>}
@@ -526,7 +549,7 @@ function VotePanel({ view, selfId, code }: { view: ParticipantView; selfId: stri
   return (
     <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="panel p-5" style={{ borderColor: "rgba(245,158,11,0.4)" }}>
       <div className="text-center">
-        <div className="text-4xl sun-pulse">🗳️</div>
+        <div className="sun-pulse mx-auto grid h-12 w-12 place-items-center text-[var(--amber)]"><BallotIcon size={38} /></div>
         <h3 className="font-display mt-1 text-xl font-black text-[var(--amber)]">Kimi Asalım?</h3>
         <p className="mt-1 text-xs text-[var(--muted)]">{view.vote.count}/{view.vote.total} oy verildi</p>
       </div>
@@ -570,9 +593,9 @@ function AnnouncementCard({ a }: { a: Announcement }) {
     >
       <p className="font-display text-sm uppercase tracking-widest text-[var(--faint)]">{a.title}</p>
       {a.dead ? (
-        <motion.div className="mt-2 text-5xl" initial={{ scale: 0.5, rotate: -12 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 200 }}>⚰️</motion.div>
+        <motion.div className="mt-2 grid place-items-center text-[var(--blood)]" initial={{ scale: 0.5, rotate: -12 }} animate={{ scale: 1, rotate: 0 }} transition={{ type: "spring", stiffness: 200 }}><SkullIcon size={46} strokeWidth={1.7} /></motion.div>
       ) : (
-        <div className="mt-2 text-5xl">🕊️</div>
+        <div className="mt-2 grid place-items-center text-[var(--emerald)]"><CheckIcon size={44} /></div>
       )}
       <div className="mt-2 space-y-1">
         {a.lines.map((l, i) => (
@@ -588,20 +611,80 @@ function AnnouncementCard({ a }: { a: Announcement }) {
 
 /* ------------------------- Bitiş ekranı ------------------------- */
 function EndScreen({ view }: { view: ParticipantView }) {
+  const jester = view.winner === "soytari";
   const evil = view.winner === "vampir";
+  const decided = jester || evil || view.winner === "koy";
+  const accent = jester ? "#ec4899" : evil ? "#ef4444" : "#34d399";
+  const textColor = jester ? "#f9a8d4" : evil ? "#fca5a5" : "#6ee7b7";
+  const palette = jester
+    ? ["#ec4899", "#f472b6", "#a855f7", "#f59e0b", "#ffffff"]
+    : evil
+      ? ["#ef4444", "#b91c1c", "#a855f7", "#fca5a5", "#f59e0b"]
+      : ["#34d399", "#6ee7b7", "#22d3ee", "#f59e0b", "#ffffff"];
+  const WinIcon = jester ? JesterIcon : evil ? BatIcon : CrownIcon;
+  const title = jester ? "Soytarı Kazandı" : evil ? "Vampirler Kazandı" : view.winner === "koy" ? "Köy Kazandı" : "Oyun Bitti";
+  const subtitle = jester ? "Herkesi kandırıp darağacına çıktı." : evil ? "Karanlık köyü ele geçirdi." : view.winner === "koy" ? "Köy şafağa kavuştu." : "El sona erdi.";
+
+  // Bu oyuncu kazandı mı? Soytarı yalnızca kendisi astırılınca kazanır; köy
+  // kazanınca soytarı kaybeder.
+  const myTeam = view.self?.role?.team ?? null;
+  const iAmJester = view.self?.role?.special === "soytari";
+  const iWon = decided
+    ? jester
+      ? iAmJester
+      : evil
+        ? myTeam === "vampir"
+        : myTeam === "koy" && !iAmJester
+    : null;
+
   return (
     <div className="mt-2">
       <motion.div
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ type: "spring", stiffness: 140, damping: 12 }}
-        className="panel p-6 text-center"
-        style={{ borderColor: evil ? "rgba(239,68,68,0.5)" : "rgba(52,211,153,0.5)" }}
+        initial={{ opacity: 0, scale: 0.82, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 150, damping: 13 }}
+        className="panel relative overflow-hidden p-7 text-center"
+        style={{ borderColor: `${accent}88`, boxShadow: `0 20px 60px -20px ${accent}aa` }}
       >
-        <motion.div className="text-6xl" animate={{ scale: [1, 1.15, 1] }} transition={{ duration: 2, repeat: Infinity }}>{evil ? "🧛" : "🏡"}</motion.div>
-        <h2 className="font-display title-glow mt-3 text-3xl font-black" style={{ color: evil ? "#fca5a5" : "#6ee7b7" }}>
-          {evil ? "Vampirler Kazandı" : view.winner === "koy" ? "Köy Kazandı" : "Oyun Bitti"}
+        {decided && <Burst palette={palette} />}
+        <div className="pointer-events-none absolute -top-16 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full opacity-40 blur-3xl" style={{ background: accent }} />
+
+        <motion.div
+          className="relative mx-auto grid h-24 w-24 place-items-center"
+          initial={{ scale: 0, rotate: -30 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 200, damping: 12, delay: 0.15 }}
+        >
+          <motion.div
+            className="absolute inset-0 rounded-full"
+            style={{ background: `radial-gradient(circle, ${accent}55, transparent 70%)` }}
+            animate={{ scale: [1, 1.18, 1] }}
+            transition={{ duration: 2.4, repeat: Infinity }}
+          />
+          <span style={{ color: jester ? "#f9a8d4" : evil ? "#fca5a5" : "#fde68a" }}>
+            <WinIcon size={62} strokeWidth={1.6} />
+          </span>
+        </motion.div>
+
+        <p className="relative mt-4 text-xs uppercase tracking-[0.3em] text-[var(--faint)]">
+          {decided ? "Zafer" : "Sonuç"}
+        </p>
+        <h2 className="font-display title-glow relative mt-1 text-[2rem] font-black leading-tight" style={{ color: textColor }}>
+          {title}
         </h2>
+        <p className="relative mt-2 text-sm text-[var(--muted)]">{subtitle}</p>
+
+        {iWon !== null && (
+          <span
+            className="badge relative mt-4"
+            style={{
+              background: iWon ? "rgba(52,211,153,0.16)" : "rgba(239,68,68,0.14)",
+              color: iWon ? "#6ee7b7" : "#fca5a5",
+            }}
+          >
+            {iWon ? "🎉 Kazandın" : "💀 Kaybettin"}
+          </span>
+        )}
       </motion.div>
 
       {view.reveal && (
@@ -609,17 +692,23 @@ function EndScreen({ view }: { view: ParticipantView }) {
           <p className="mb-3 text-xs uppercase tracking-wider text-[var(--faint)]">Tüm Roller</p>
           <ul className="space-y-1.5">
             {view.reveal.map((r, i) => {
-              const m = roleMeta(r.roleName ? { key: "", name: r.roleName, team: r.team ?? "koy", enabled: true, count: 0 } : null);
+              const rc = r.roleKey
+                ? { key: r.roleKey, name: r.roleName ?? r.roleKey, team: r.team ?? "koy", enabled: true, count: 0, special: r.special }
+                : null;
+              const m = roleMeta(rc);
               return (
                 <motion.li
                   key={r.id}
                   initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.05 }}
+                  transition={{ delay: 0.3 + i * 0.05 }}
                   className="flex items-center justify-between rounded-xl bg-[rgba(255,255,255,0.03)] px-3 py-2 text-sm"
                 >
-                  <span className={r.alive ? "" : "text-[var(--faint)] line-through"}>{m.icon} {r.name}</span>
-                  <span style={{ color: teamColor(r.team) }}>{r.roleName ?? "—"}</span>
+                  <span className={`flex items-center gap-2.5 ${r.alive ? "" : "text-[var(--faint)] line-through"}`}>
+                    <span style={{ color: m.accent }}><RoleGlyph role={rc} size={18} /></span>
+                    {r.name}
+                  </span>
+                  <span style={{ color: r.special === "soytari" ? "#f9a8d4" : teamColor(r.team) }}>{r.roleName ?? "—"}</span>
                 </motion.li>
               );
             })}

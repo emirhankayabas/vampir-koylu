@@ -32,61 +32,84 @@ export function clearPlayerId(code: string) {
   idListeners.forEach((l) => l());
 }
 
-// SSE ile canlı durum aboneliği. Tarayıcının EventSource'u kopan bağlantıyı
-// normalde otomatik yeniden bağlar; ancak mobilde sekme arka plana atılıp
-// kilitlenince bağlantı "sessizce" ölebilir ve durum güncellemeleri durur
-// (kullanıcı sayfayı yenilemek zorunda kalır). Bunu önlemek için:
-//  • Sunucu ~5 sn'de bir kalp atışı (hb) yollar; hiç mesaj gelmezse bağlantı
-//    ölmüş sayılıp yeniden kurulur (watchdog).
-//  • Sekme tekrar görünür olunca anında taze bağlantı açılır.
-const WATCHDOG_MS = 20000;
+// Canlı durum aboneliği — kısa yoklama (polling) ile.
+//
+// Vercel ücretsiz planında uzun ömürlü SSE/WebSocket güvenilir değildir
+// (bağlantı ~60 sn sonra kesilir ve bazı istemcilerde güncelleme durur —
+// kullanıcı sayfayı yenilemek zorunda kalırdı). Bunun yerine her ~1.2 sn'de
+// bir hızlı GET isteği atıyoruz. Sunucu bilinen sürümü karşılaştırır:
+//  • sürüm aynıysa küçük `{ same: true }` döner (setState yok, render yok),
+//  • değiştiyse taze durumu döner.
+// Sekme arka plandayken yoklama durur (pil/veri tasarrufu); sekme yeniden
+// görünür olunca anında bir istek atılıp durum tazelenir.
+const POLL_MS = 1200;
+
+// URL'ye istemcinin bildiği sürümü ekler (koşullu yanıt için).
+function withVersion(url: string, v: number): string {
+  return url + (url.includes("?") ? "&" : "?") + "v=" + v;
+}
 
 export function useStream<T>(url: string | null): T | null {
   const [data, setData] = useState<T | null>(null);
+
   useEffect(() => {
     if (!url) return;
-    let es: EventSource | null = null;
-    let watchdog: ReturnType<typeof setTimeout> | null = null;
     let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let controller: AbortController | null = null;
+    // En son görülen sürüm — sunucuya "bunu biliyorum" demek için.
+    let version = -1;
 
-    const arm = () => {
-      if (watchdog) clearTimeout(watchdog);
-      watchdog = setTimeout(connect, WATCHDOG_MS);
+    const schedule = (ms: number) => {
+      if (timer) clearTimeout(timer);
+      if (!stopped) timer = setTimeout(poll, ms);
     };
 
-    const connect = () => {
+    const poll = async () => {
       if (stopped) return;
-      if (es) es.close();
-      es = new EventSource(url);
-      arm();
-      es.onopen = arm;
-      es.onmessage = (e) => {
-        arm(); // her mesaj (kalp atışı dahil) bağlantının canlı olduğunu gösterir
-        try {
-          const parsed = JSON.parse(e.data);
-          if (parsed && parsed.hb) return; // kalp atışı — durum değil, yok say
-          setData(parsed as T);
-        } catch {
-          /* bozuk mesaj — yok say */
+      // Not: Sekme arka plandayken tarayıcı zamanlayıcıları zaten kısar
+      // (mobilde ~1/dk), kilit ekranında dondurur — ayrıca bir "hidden"
+      // kısıtı koymuyoruz ki döngü hiçbir koşulda sessizce ölmesin.
+      controller = new AbortController();
+      try {
+        const res = await fetch(withVersion(url, version), {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        const parsed = await res.json();
+        if (!stopped && parsed) {
+          if (parsed.same) {
+            // Değişiklik yok — mevcut durumu koru.
+          } else {
+            if (typeof parsed.version === "number") version = parsed.version;
+            setData(parsed as T);
+          }
         }
-      };
-      es.onerror = arm; // tarayıcı kendi yeniden bağlanmayı dener; watchdog yedek
+      } catch {
+        /* ağ hatası / iptal — sonraki turda tekrar dener */
+      } finally {
+        schedule(POLL_MS);
+      }
     };
 
     const onVisible = () => {
-      if (document.visibilityState === "visible") connect();
+      if (document.visibilityState === "visible") {
+        version = -1; // gizliyken kaçan güncellemeleri garanti almak için tazele
+        schedule(0);
+      }
     };
 
-    connect();
+    poll();
     document.addEventListener("visibilitychange", onVisible);
 
     return () => {
       stopped = true;
-      if (watchdog) clearTimeout(watchdog);
+      if (timer) clearTimeout(timer);
+      if (controller) controller.abort();
       document.removeEventListener("visibilitychange", onVisible);
-      if (es) es.close();
     };
   }, [url]);
+
   return data;
 }
 

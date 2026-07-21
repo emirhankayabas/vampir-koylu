@@ -3,7 +3,7 @@
 
 import type { RoleConfig } from "@/lib/types";
 
-export type SpecialKey = "avci" | "doktor" | "medyum";
+export type SpecialKey = "avci" | "doktor" | "medyum" | "soytari";
 
 export interface RoleMeta {
   icon: string; // emoji ikon
@@ -50,6 +50,14 @@ const META: Record<string, RoleMeta> = {
     ability: "Özel gücün yok. Gündüz tartışıp doğru oyu vererek köyü kurtarırsın.",
     accent: "#34d399",
     glow: "rgba(52,211,153,0.4)",
+  },
+  soytari: {
+    icon: "🃏",
+    tagline: "Tarafsız hokkabaz",
+    ability:
+      "Amacın gündüz oylamasında KENDİNİ astırmak — başarırsan tek başına kazanırsın. Vampirler seni öldürürse ya da bir taraf kazanırsa kaybedersin. Herkese köylü gibi görünürsün.",
+    accent: "#ec4899",
+    glow: "rgba(236,72,153,0.45)",
   },
 };
 

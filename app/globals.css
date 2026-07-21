@@ -95,6 +95,11 @@ body > * {
 }
 .title-glow {
   text-shadow: 0 0 24px rgba(168, 85, 247, 0.55), 0 0 4px rgba(239, 68, 68, 0.4);
+  animation: titleGlow 4s ease-in-out infinite;
+}
+@keyframes titleGlow {
+  0%, 100% { text-shadow: 0 0 20px rgba(168, 85, 247, 0.45), 0 0 4px rgba(239, 68, 68, 0.35); }
+  50% { text-shadow: 0 0 34px rgba(168, 85, 247, 0.75), 0 0 10px rgba(239, 68, 68, 0.55); }
 }
 
 /* --------------------------- Panel --------------------------- */
@@ -115,17 +120,23 @@ body > * {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 0.5rem;
+  gap: 0.55rem;
   font-weight: 700;
+  letter-spacing: 0.01em;
   border-radius: 16px;
   padding: 0.95rem 1.25rem;
   transition: transform 0.12s ease, filter 0.2s ease, box-shadow 0.2s ease;
   user-select: none;
   color: white;
-  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 .btn:active {
   transform: translateY(2px) scale(0.985);
+  filter: brightness(0.97);
+}
+/* Buton içindeki ikon + metin, parlaklık katmanlarının ÜSTÜNDE kalsın. */
+.btn > * {
+  position: relative;
+  z-index: 2;
 }
 .btn:disabled {
   opacity: 0.4;
@@ -135,28 +146,50 @@ body > * {
   padding: 1.1rem 1.4rem;
   font-size: 1.1rem;
   border-radius: 18px;
+  overflow: hidden;
+}
+/* Ana CTA'larda ara ara geçen ışık huzmesi — canlı, "oyun" hissi. */
+.btn-lg::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(115deg, transparent 34%, rgba(255, 255, 255, 0.38) 50%, transparent 66%);
+  background-size: 250% 100%;
+  background-position: 200% 0;
+  animation: sheen 4.5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes sheen {
+  0% { background-position: 200% 0; }
+  60%, 100% { background-position: -120% 0; }
 }
 
 .btn-blood {
-  background: linear-gradient(180deg, #f05252, #b91c1c);
-  box-shadow: 0 10px 24px -8px rgba(239, 68, 68, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: linear-gradient(180deg, #ff6363 0%, #e0332f 48%, #b01818 100%);
+  box-shadow: 0 12px 26px -10px rgba(239, 68, 68, 0.75), 0 4px 10px -4px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 6px rgba(120, 10, 10, 0.5);
 }
 .btn-violet {
-  background: linear-gradient(180deg, #a855f7, #6d28d9);
-  box-shadow: 0 10px 24px -8px rgba(168, 85, 247, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: linear-gradient(180deg, #bd7cff 0%, #9333ea 48%, #6d28d9 100%);
+  box-shadow: 0 12px 26px -10px rgba(168, 85, 247, 0.75), 0 4px 10px -4px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -2px 6px rgba(76, 20, 130, 0.5);
 }
 .btn-emerald {
-  background: linear-gradient(180deg, #34d399, #059669);
-  box-shadow: 0 10px 24px -8px rgba(52, 211, 153, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: linear-gradient(180deg, #4ee6ac 0%, #10b981 48%, #059669 100%);
+  box-shadow: 0 12px 26px -10px rgba(52, 211, 153, 0.7), 0 4px 10px -4px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.4), inset 0 -2px 6px rgba(4, 90, 70, 0.5);
 }
 .btn-amber {
-  background: linear-gradient(180deg, #fbbf24, #d97706);
-  box-shadow: 0 10px 24px -8px rgba(245, 158, 11, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: linear-gradient(180deg, #fcd34d 0%, #f59e0b 48%, #d97706 100%);
+  box-shadow: 0 12px 26px -10px rgba(245, 158, 11, 0.7), 0 4px 10px -4px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -2px 6px rgba(150, 90, 5, 0.4);
   color: #2b1a02;
 }
 .btn-moon {
-  background: linear-gradient(180deg, #22d3ee, #0891b2);
-  box-shadow: 0 10px 24px -8px rgba(34, 211, 238, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  background: linear-gradient(180deg, #5fe3f5 0%, #22d3ee 48%, #0891b2 100%);
+  box-shadow: 0 12px 26px -10px rgba(34, 211, 238, 0.65), 0 4px 10px -4px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -2px 6px rgba(5, 90, 110, 0.4);
   color: #04252b;
 }
 .btn-ghost {
@@ -285,20 +318,26 @@ body > * {
 .disc {
   position: absolute;
   border-radius: 50%;
-  top: 5%;
-  right: 11%;
+  /* Üst ORTAda: geri tuşu (sol) ile oda kodu (sağ) arasındaki boşlukta durur,
+     böylece hiçbir şeyi engellemez / arkasında kalmaz. Yatay ortalamayı
+     margin-left ile yapıyoruz — ay motion ile transform (translateY) kullandığı
+     için transform tabanlı ortalama animasyonu bozardı. */
+  top: -22px;
+  left: 50%;
 }
 .moon-disc {
-  width: 80px;
-  height: 80px;
+  width: 68px;
+  height: 68px;
+  margin-left: -34px;
   background: radial-gradient(circle at 36% 34%, #f8fafc, #cbd5e1 58%, #8b93a7);
-  box-shadow: 0 0 55px 12px rgba(203, 213, 225, 0.3), inset -9px -7px 0 rgba(15, 12, 30, 0.18);
+  box-shadow: 0 0 48px 10px rgba(203, 213, 225, 0.28), inset -8px -6px 0 rgba(15, 12, 30, 0.18);
 }
 .sun-disc {
-  width: 92px;
-  height: 92px;
+  width: 80px;
+  height: 80px;
+  margin-left: -40px;
   background: radial-gradient(circle at 40% 40%, #fff7ed, #fbbf24 52%, #f97316);
-  box-shadow: 0 0 90px 26px rgba(251, 158, 11, 0.45);
+  box-shadow: 0 0 72px 18px rgba(251, 158, 11, 0.38);
 }
 /* Güneş huzmeleri: her yöne eşit, ince ışınlar; kenarlara doğru yumuşar. */
 .sun-rays {

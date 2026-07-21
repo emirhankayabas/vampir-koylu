@@ -7,7 +7,11 @@ import { motion } from "motion/react";
 import { useStream, postAction } from "@/app/_lib/client";
 import { SceneBackdrop, TopBar, Spinner } from "@/app/_lib/ui";
 import { roleMeta } from "@/lib/roles";
-import type { ModeratorView, RoleConfig, Game } from "@/lib/types";
+import {
+  RoleGlyph, Burst, CrownIcon, BatIcon, JesterIcon, MoonIcon, SunIcon,
+  SkullIcon, CrossIcon, CrystalIcon, CrosshairIcon, BallotIcon,
+} from "@/app/_lib/icons";
+import type { ModeratorView, RoleConfig, Game, RoundEvent } from "@/lib/types";
 
 /* Oda kodunu ağaç boyunca taşımak için context + bağlı aksiyon yardımcı. */
 const CodeContext = createContext<string>("");
@@ -68,6 +72,7 @@ export default function ModeratorPage() {
           {game.status === "ended" && <Ended view={view} />}
         </motion.div>
 
+        {game.status !== "lobby" && <div className="mt-5"><RoundReport game={game} /></div>}
         <LogPanel game={game} />
       </div>
     </CodeContext.Provider>
@@ -119,34 +124,9 @@ function Lobby({ view, code }: { view: ModeratorView; code: string }) {
 
       <Section title="Roller & Adet">
         <div className="space-y-2">
-          {draft.map((r, i) => {
-            const meta = roleMeta(r);
-            const evil = r.team === "vampir";
-            return (
-              <motion.div
-                key={r.key}
-                initial={{ opacity: 0, x: -12 }}
-                animate={{ opacity: 1, x: 0 }}
-                transition={{ delay: i * 0.05 }}
-                className={`panel-tight flex items-center gap-3 border p-3 transition ${r.enabled ? "" : "opacity-45"}`}
-                style={{ borderColor: r.enabled ? `${meta.accent}44` : "var(--panel-line)", background: "rgba(255,255,255,0.03)" }}
-              >
-                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl text-2xl" style={{ background: `${meta.accent}22`, border: `1px solid ${meta.accent}44` }}>{meta.icon}</div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">{r.name}</span>
-                    <span className="badge" style={{ background: evil ? "rgba(239,68,68,0.16)" : "rgba(52,211,153,0.14)", color: evil ? "#fca5a5" : "#6ee7b7" }}>{evil ? "Vampir" : "Köy"}</span>
-                  </div>
-                  <p className="mt-0.5 text-[11px] leading-tight text-[var(--faint)]">{meta.ability}</p>
-                </div>
-                {r.fill ? (
-                  <span className="shrink-0 text-center text-[10px] text-[var(--faint)]">kalan<br />herkes</span>
-                ) : (
-                  <Stepper value={r.count} onChange={(v) => update(i, { count: v, enabled: v > 0 })} accent={meta.accent} />
-                )}
-              </motion.div>
-            );
-          })}
+          {draft.map((r, i) => (
+            <LobbyRoleRow key={r.key} r={r} i={i} update={update} />
+          ))}
         </div>
         <div className="mt-3 flex items-center justify-between text-sm">
           <span className={totalSpecial > game.players.length ? "text-[var(--blood)]" : "text-[var(--muted)]"}>
@@ -178,11 +158,58 @@ function Lobby({ view, code }: { view: ModeratorView; code: string }) {
 
       {err && <p className="text-sm text-[var(--blood)]">{err}</p>}
       <div className="flex gap-2">
-        <button onClick={start} disabled={game.players.length === 0} className="btn btn-emerald btn-lg flex-1">▶️ Oyunu Başlat</button>
+        <button onClick={start} disabled={game.players.length === 0} className="btn btn-emerald flex-1">▶️ Oyunu Başlat</button>
         <ResetButton />
       </div>
       <CloseRoomButton />
     </div>
+  );
+}
+
+/* Lobide tek rol satırı. Uzun açıklamalar varsayılan olarak 2 satıra kırpılır;
+   "Detay" ile tam metin açılır (kartlar aynı boyda kalır). */
+function LobbyRoleRow({ r, i, update }: { r: RoleConfig; i: number; update: (i: number, patch: Partial<RoleConfig>) => void }) {
+  const meta = roleMeta(r);
+  const evil = r.team === "vampir";
+  const [open, setOpen] = useState(false);
+  // Yalnızca gerçekten uzun açıklamalar (Soytarı) 2 satıra kırpılıp "Detay" ile
+  // açılır; kısa roller olduğu gibi görünür.
+  const long = meta.ability.length > 100;
+  return (
+    <motion.div
+      initial={{ opacity: 0, x: -12 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ delay: i * 0.05 }}
+      className={`panel-tight flex items-start gap-3 border p-3 transition ${r.enabled ? "" : "opacity-45"}`}
+      style={{ borderColor: r.enabled ? `${meta.accent}44` : "var(--panel-line)", background: "rgba(255,255,255,0.03)" }}
+    >
+      <div className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-xl" style={{ background: `${meta.accent}22`, border: `1px solid ${meta.accent}44`, color: meta.accent }}>
+        <RoleGlyph role={r} size={24} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold">{r.name}</span>
+          {r.special === "soytari" ? (
+            <span className="badge" style={{ background: "rgba(236,72,153,0.16)", color: "#f9a8d4" }}>Tarafsız</span>
+          ) : (
+            <span className="badge" style={{ background: evil ? "rgba(239,68,68,0.16)" : "rgba(52,211,153,0.14)", color: evil ? "#fca5a5" : "#6ee7b7" }}>{evil ? "Vampir" : "Köy"}</span>
+          )}
+        </div>
+        <p className={`mt-0.5 text-[11px] leading-tight text-[var(--faint)] ${open ? "" : "line-clamp-2"}`}>{meta.ability}</p>
+        {long && (
+          <button type="button" onClick={() => setOpen((o) => !o)} className="mt-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: meta.accent }}>
+            {open ? "Daha az ▴" : "Detay ▾"}
+          </button>
+        )}
+      </div>
+      {r.fill ? (
+        <span className="mt-1.5 shrink-0 text-center text-[10px] text-[var(--faint)]">kalan<br />herkes</span>
+      ) : (
+        <div className="mt-1.5 shrink-0">
+          <Stepper value={r.count} onChange={(v) => update(i, { count: v, enabled: v > 0 })} accent={meta.accent} />
+        </div>
+      )}
+    </motion.div>
   );
 }
 
@@ -216,8 +243,14 @@ function InProgress({ view }: { view: ModeratorView }) {
         className="panel flex items-center justify-between p-4"
       >
         <span className="flex items-center gap-2 font-semibold">
-          <motion.span key={game.phase + "i"} initial={{ scale: 0, rotate: -90 }} animate={{ scale: 1, rotate: 0 }} className={game.phase === "night" ? "moon-pulse" : "sun-pulse"}>
-            {game.phase === "night" ? "🌙" : "☀️"}
+          <motion.span
+            key={game.phase + "i"}
+            initial={{ scale: 0, rotate: -90 }}
+            animate={{ scale: 1, rotate: 0 }}
+            className={`grid h-8 w-8 place-items-center ${game.phase === "night" ? "moon-pulse" : "sun-pulse"}`}
+            style={{ color: game.phase === "night" ? "#22d3ee" : "#f59e0b" }}
+          >
+            {game.phase === "night" ? <MoonIcon size={22} /> : <SunIcon size={22} />}
           </motion.span>
           {game.phase === "night" ? "Gece" : "Gündüz"} · {game.dayNumber}. gün
         </span>
@@ -229,9 +262,12 @@ function InProgress({ view }: { view: ModeratorView }) {
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           className="panel p-4 text-center font-bold"
-          style={{ borderColor: game.winner === "vampir" ? "rgba(239,68,68,0.5)" : "rgba(52,211,153,0.5)", color: game.winner === "vampir" ? "#fca5a5" : "#6ee7b7" }}
+          style={{
+            borderColor: game.winner === "vampir" ? "rgba(239,68,68,0.5)" : game.winner === "soytari" ? "rgba(236,72,153,0.5)" : "rgba(52,211,153,0.5)",
+            color: game.winner === "vampir" ? "#fca5a5" : game.winner === "soytari" ? "#f9a8d4" : "#6ee7b7",
+          }}
         >
-          {game.winner === "vampir" ? "🧛 Vampirler kazandı" : "🏡 Köy kazandı"} — oyunu bitirebilirsin.
+          {game.winner === "vampir" ? "🧛 Vampirler kazandı" : game.winner === "soytari" ? "🃏 Soytarı kazandı" : "🏡 Köy kazandı"} — oyunu bitirebilirsin.
         </motion.div>
       )}
 
@@ -408,10 +444,10 @@ function PlayerRow({ game, playerId }: { game: Game; playerId: string }) {
   return (
     <div className={`flex items-center justify-between rounded-xl px-3 py-2 text-sm ${p.alive ? "bg-[rgba(255,255,255,0.04)]" : "bg-[rgba(255,255,255,0.02)]"}`}>
       <span className={`flex items-center gap-2 ${p.alive ? "" : "text-[var(--faint)] line-through"}`}>
-        <span>{meta.icon}</span>{p.name}
+        <span style={{ color: meta.accent }}><RoleGlyph role={role} size={18} /></span>{p.name}
       </span>
       <div className="flex items-center gap-3">
-        <span style={{ color: evil ? "#fca5a5" : "#6ee7b7" }}>{role?.name ?? "—"}</span>
+        <span style={{ color: role?.special === "soytari" ? "#f9a8d4" : evil ? "#fca5a5" : "#6ee7b7" }}>{role?.name ?? "—"}</span>
         <button onClick={() => act("toggleKill", { targetId: p.id })} className="rounded-lg bg-[rgba(255,255,255,0.06)] px-2 py-1 text-xs hover:bg-[rgba(255,255,255,0.12)]">{p.alive ? "Öldür" : "Dirilt"}</button>
       </div>
     </div>
@@ -422,13 +458,40 @@ function PlayerRow({ game, playerId }: { game: Game; playerId: string }) {
 function Ended({ view }: { view: ModeratorView }) {
   const game = view.game;
   const act = useAct();
+  const jester = game.winner === "soytari";
   const evil = game.winner === "vampir";
+  const decided = jester || evil || game.winner === "koy";
+  const accent = jester ? "#ec4899" : evil ? "#ef4444" : "#34d399";
+  const textColor = jester ? "#f9a8d4" : evil ? "#fca5a5" : "#6ee7b7";
+  const palette = jester
+    ? ["#ec4899", "#f472b6", "#a855f7", "#f59e0b", "#ffffff"]
+    : evil
+      ? ["#ef4444", "#b91c1c", "#a855f7", "#fca5a5", "#f59e0b"]
+      : ["#34d399", "#6ee7b7", "#22d3ee", "#f59e0b", "#ffffff"];
+  const WinIcon = jester ? JesterIcon : evil ? BatIcon : CrownIcon;
+  const title = jester ? "Soytarı Kazandı" : evil ? "Vampirler Kazandı" : game.winner === "koy" ? "Köy Kazandı" : "Oyun Bitti";
   return (
     <div className="space-y-5">
-      <motion.div initial={{ scale: 0.85, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} transition={{ type: "spring", stiffness: 140 }} className="panel p-5 text-center" style={{ borderColor: evil ? "rgba(239,68,68,0.5)" : "rgba(52,211,153,0.5)" }}>
-        <div className="text-5xl">{evil ? "🧛" : game.winner === "koy" ? "🏡" : "🎭"}</div>
-        <h2 className="font-display title-glow mt-2 text-2xl font-black" style={{ color: evil ? "#fca5a5" : "#6ee7b7" }}>
-          {evil ? "Vampirler Kazandı" : game.winner === "koy" ? "Köy Kazandı" : "Oyun Bitti"}
+      <motion.div
+        initial={{ scale: 0.85, opacity: 0, y: 8 }}
+        animate={{ scale: 1, opacity: 1, y: 0 }}
+        transition={{ type: "spring", stiffness: 150, damping: 13 }}
+        className="panel relative overflow-hidden p-6 text-center"
+        style={{ borderColor: `${accent}88`, boxShadow: `0 18px 50px -20px ${accent}aa` }}
+      >
+        {decided && <Burst palette={palette} count={26} />}
+        <div className="pointer-events-none absolute -top-14 left-1/2 h-40 w-40 -translate-x-1/2 rounded-full opacity-40 blur-3xl" style={{ background: accent }} />
+        <motion.div
+          className="relative mx-auto grid h-20 w-20 place-items-center"
+          initial={{ scale: 0, rotate: -30 }}
+          animate={{ scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 200, damping: 12, delay: 0.12 }}
+          style={{ color: jester ? "#f9a8d4" : evil ? "#fca5a5" : "#fde68a" }}
+        >
+          <WinIcon size={decided ? 54 : 48} strokeWidth={1.6} />
+        </motion.div>
+        <h2 className="font-display title-glow relative mt-3 text-2xl font-black" style={{ color: textColor }}>
+          {title}
         </h2>
       </motion.div>
 
@@ -488,6 +551,86 @@ function ResetButton() {
     <div className="flex gap-1">
       <button onClick={() => { act("reset"); setConfirm(false); }} className="btn btn-blood px-3 text-sm">Emin misin?</button>
       <button onClick={() => setConfirm(false)} className="btn btn-ghost px-3 text-sm">Vazgeç</button>
+    </div>
+  );
+}
+
+/* ---- Tur Raporu: her gece/infazın gizli detayları (yalnızca moderatör) ---- */
+function RoundReport({ game }: { game: Game }) {
+  const rounds = game.roundLog ?? [];
+  if (rounds.length === 0) return null;
+  return (
+    <Section title="🗒️ Tur Raporu — kim ne yaptı">
+      <div className="space-y-2">
+        {rounds.map((r, i) => (
+          <RoundCard key={`${r.day}-${r.kind}-${r.at}-${i}`} r={r} />
+        ))}
+      </div>
+    </Section>
+  );
+}
+
+function ReportLine({ icon, color, label, value, strong }: { icon: React.ReactNode; color: string; label: string; value: string; strong?: string }) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <span className="grid h-6 w-6 shrink-0 place-items-center rounded-lg" style={{ color, background: `${color}1e` }}>{icon}</span>
+      <span className="text-[var(--faint)]">{label}:</span>
+      <span className="font-medium text-[var(--ink)]">{value}</span>
+      {strong && <span className="font-semibold" style={{ color }}>· {strong}</span>}
+    </div>
+  );
+}
+
+function RoundCard({ r }: { r: RoundEvent }) {
+  const isNight = r.kind === "night";
+  const HeaderIcon = r.kind === "night" ? MoonIcon : r.kind === "hunter" ? CrosshairIcon : BallotIcon;
+  const headColor = r.kind === "night" ? "#22d3ee" : r.kind === "hunter" ? "#f59e0b" : "#f59e0b";
+  const headTitle = r.kind === "night" ? `${r.day}. Gece` : r.kind === "hunter" ? `${r.day}. Gün · Avcının Kurşunu` : `${r.day}. Gün · İnfaz`;
+
+  return (
+    <div className="panel-tight border p-3" style={{ borderColor: "var(--panel-line)", background: "rgba(255,255,255,0.03)" }}>
+      <div className="mb-2 flex items-center gap-2">
+        <span className="grid h-7 w-7 place-items-center rounded-lg" style={{ color: headColor, background: `${headColor}1e` }}>
+          <HeaderIcon size={16} />
+        </span>
+        <span className="font-display text-sm font-bold">{headTitle}</span>
+      </div>
+
+      {isNight && (
+        <div className="space-y-1.5">
+          <ReportLine icon={<BatIcon size={14} />} color="#ef4444" label="Vampir hedefi" value={r.vampTarget ?? "seçilmedi"} />
+          <ReportLine
+            icon={<CrossIcon size={14} />}
+            color="#22d3ee"
+            label="Doktor korudu"
+            value={r.doctorTarget ?? "seçilmedi"}
+            strong={r.saved ? "saldırıyı engelledi!" : undefined}
+          />
+          {r.mediumTarget && (
+            <ReportLine
+              icon={<CrystalIcon size={14} />}
+              color="#a855f7"
+              label="Medyum okudu"
+              value={r.mediumTarget}
+              strong={r.mediumResult === "vampir" ? "Vampir çıktı" : "Masum"}
+            />
+          )}
+        </div>
+      )}
+
+      <div className={`flex flex-wrap items-center gap-2 ${isNight ? "mt-2 border-t border-[var(--panel-line)] pt-2" : ""}`}>
+        {r.deaths.length > 0 ? (
+          r.deaths.map((d, i) => (
+            <span key={i} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs font-semibold" style={{ background: "rgba(239,68,68,0.12)", color: "#fca5a5" }}>
+              <SkullIcon size={13} /> {d.name}
+              <span className="text-[var(--faint)]">·</span>
+              <span style={{ color: d.team === "vampir" ? "#fca5a5" : "#6ee7b7" }}>{d.role}</span>
+            </span>
+          ))
+        ) : (
+          <span className="inline-flex items-center gap-1.5 text-xs text-[var(--emerald)]">🕊️ Kimse ölmedi</span>
+        )}
+      </div>
     </div>
   );
 }
@@ -581,8 +724,8 @@ function ManualAssign({ game }: { game: Game }) {
           const ok = n === r.count;
           const meta = roleMeta(r);
           return (
-            <span key={r.key} className="badge" style={{ background: `${meta.accent}1e`, color: ok ? "#6ee7b7" : "#fca5a5" }}>
-              {meta.icon} {r.name} {n}/{r.count}
+            <span key={r.key} className="badge inline-flex items-center gap-1.5" style={{ background: `${meta.accent}1e`, color: ok ? "#6ee7b7" : "#fca5a5" }}>
+              <span style={{ color: meta.accent }}><RoleGlyph role={r} size={14} /></span> {r.name} {n}/{r.count}
             </span>
           );
         })}

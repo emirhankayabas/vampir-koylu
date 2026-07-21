@@ -16,8 +16,9 @@ import {
   hunterShoot,
   roleOf,
   log,
+  recordRound,
 } from "@/lib/game";
-import type { Game, RoleConfig, NightRole } from "@/lib/types";
+import type { Game, RoleConfig, NightRole, RoundDeath } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -202,6 +203,7 @@ export async function POST(request: NextRequest) {
       game.vote = { active: false, votes: {} };
       game.mediumLog = [];
       game.doctorSelfUsed = [];
+      game.roundLog = [];
       log(game, action === "newRound" ? "Yeni el başladı." : "Oyun başladı. Roller dağıtıldı.");
       if (game.mode === "phone") {
         beginNight(game); // 1. gece otomatik başlar
@@ -251,9 +253,15 @@ export async function POST(request: NextRequest) {
     case "nightResolve": {
       const deaths = Array.isArray(body.deaths) ? (body.deaths as string[]) : [];
       const names: string[] = [];
+      const dead: RoundDeath[] = [];
       for (const id of deaths) {
         const killed = killPlayer(game, id);
-        if (killed) names.push(game.players.find((p) => p.id === killed)!.name);
+        if (killed) {
+          const p = game.players.find((x) => x.id === killed)!;
+          const r = roleOf(game, p.role);
+          names.push(p.name);
+          dead.push({ name: p.name, role: r?.name ?? "?", team: r?.team ?? "koy" });
+        }
       }
       game.phase = "day";
       game.announcement = {
@@ -264,6 +272,7 @@ export async function POST(request: NextRequest) {
         at: Date.now(),
       };
       log(game, names.length ? `Gece ${names.join(", ")} öldü.` : "Gece kimse ölmedi.");
+      recordRound(game, { day: game.dayNumber, kind: "night", at: Date.now(), deaths: dead });
       finalizeWinner(game);
       await saveGame(game);
       return ok();
@@ -298,6 +307,26 @@ export async function POST(request: NextRequest) {
       killPlayer(game, targetId);
       game.vote = { active: false, votes: {} };
       const role = roleOf(game, target.role);
+      game.hangedThisDay = true;
+
+      // Soytarı astırıldıysa: tek başına kazanır, oyun anında biter.
+      if (role?.special === "soytari") {
+        game.winner = "soytari";
+        game.status = "ended";
+        game.night.active = false;
+        game.announcement = {
+          kind: "hang",
+          title: "Soytarının Oyunu",
+          lines: [`${target.name} asıldı… ama o bir Soytarıydı!`, "Soytarı kazandı 🃏"],
+          dead: { name: target.name, roleName: "Soytarı", team: role.team },
+          at: Date.now(),
+        };
+        log(game, `${target.name} (Soytarı) astırıldı — Soytarı kazandı.`);
+        recordRound(game, { day: game.dayNumber, kind: "hang", at: Date.now(), deaths: [{ name: target.name, role: "Soytarı", team: role.team }] });
+        await saveGame(game);
+        return ok();
+      }
+
       const shown = role?.team === "vampir" ? "Vampir" : "Köylü";
       game.announcement = {
         kind: "hang",
@@ -307,7 +336,7 @@ export async function POST(request: NextRequest) {
         at: Date.now(),
       };
       log(game, `${target.name} asıldı.`);
-      game.hangedThisDay = true;
+      recordRound(game, { day: game.dayNumber, kind: "hang", at: Date.now(), deaths: [{ name: target.name, role: role?.name ?? "?", team: role?.team ?? "koy" }] });
       if (role?.special === "avci") {
         game.pendingHunterId = target.id;
         log(game, `${target.name} (Avcı) atış hakkı kazandı.`);
@@ -364,6 +393,7 @@ export async function POST(request: NextRequest) {
       game.announcement = null;
       game.mediumLog = [];
       game.doctorSelfUsed = [];
+      game.roundLog = [];
       game.players.forEach((p) => {
         p.role = null;
         p.alive = true;

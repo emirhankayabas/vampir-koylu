@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
+import { ArrowLeftIcon, CopyIcon, CheckIcon } from "@/app/_lib/icons";
 import type { Phase } from "@/lib/types";
 
 /* Gece/gündüz sahnesi — tam ekran arka plan, faza göre çapraz geçiş.
@@ -69,12 +70,24 @@ export function TopBar({ code, inGame, showCode = true }: { code: string; inGame
   return (
     <>
       <div className="mb-4 flex items-center justify-between">
-        <button onClick={back} className="iconbtn" aria-label="Geri">←</button>
+        <button onClick={back} className="iconbtn" aria-label="Geri">
+          <ArrowLeftIcon size={18} />
+        </button>
         {showCode && (
-          <button onClick={copy} className="panel-tight flex items-center gap-2 border border-[var(--panel-line)] px-3 py-1.5" style={{ borderRadius: 12 }}>
-            <span className="text-[10px] uppercase tracking-wider text-[var(--faint)]">Oda</span>
-            <span className="code-chip text-sm text-[var(--ink)]">{code}</span>
-            <span className="text-xs text-[var(--faint)]">{copied ? "✓" : "⧉"}</span>
+          <button
+            onClick={copy}
+            className="flex items-center gap-1.5 rounded-lg py-1 pl-2 pr-1 transition active:scale-95"
+            aria-label="Oda kodunu kopyala"
+          >
+            <span
+              className="text-sm font-semibold text-[var(--muted)]"
+              style={{ fontFamily: "var(--font-mono, ui-monospace, monospace)", letterSpacing: "0.06em" }}
+            >
+              {code}
+            </span>
+            <span className={copied ? "text-[var(--emerald)]" : "text-[var(--faint)]"}>
+              {copied ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
+            </span>
           </button>
         )}
       </div>

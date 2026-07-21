@@ -1,6 +1,8 @@
 // Oyun için ortak TypeScript tipleri
 
 export type Team = "koy" | "vampir";
+// Kazanan taraf: köy, vampir ya da tarafsız Soytarı (astırılırsa tek başına kazanır).
+export type Winner = Team | "soytari";
 
 export type GameStatus = "lobby" | "in_progress" | "ended";
 export type GameMode = "phone" | "verbal";
@@ -19,7 +21,7 @@ export interface RoleConfig {
   count: number; // kaç kişiye dağıtılacak (fill=true olan hariç)
   fill?: boolean; // geri kalan herkes bu role atanır (Köylü)
   builtin?: boolean; // varsayılan rol mü (silinemez)
-  special?: "avci" | "doktor" | "medyum"; // özel yetenek işaretçisi
+  special?: "avci" | "doktor" | "medyum" | "soytari"; // özel yetenek / tarafsız işaretçisi
 }
 
 export interface Player {
@@ -54,6 +56,26 @@ export interface MediumReading {
   day: number;
 }
 
+// Moderatör Tur Raporu — her gece/infaz için detaylar. Gece mekaniğinin gizli
+// bilgilerini (vampir hedefi, doktor koruması/kurtarışı, medyum sonucu) içerir;
+// YALNIZCA moderatör görür (participantView'a dahil edilmez).
+export interface RoundDeath {
+  name: string;
+  role: string; // gerçek rol adı (moderatör god-view)
+  team: Team;
+}
+export interface RoundEvent {
+  day: number;
+  kind: "night" | "hang" | "hunter";
+  at: number;
+  vampTarget?: string | null; // vampirlerin seçtiği hedef
+  doctorTarget?: string | null; // doktorun koruduğu kişi
+  saved?: boolean; // doktor saldırıyı engelledi mi
+  mediumTarget?: string | null; // medyumun incelediği kişi
+  mediumResult?: Team | null; // inceleme sonucu (vampir/köy)
+  deaths: RoundDeath[]; // bu turda ölenler
+}
+
 // Sabah / infaz duyurusu — herkese gösterilir
 export interface Announcement {
   kind: "morning" | "hang" | "hunter" | "info";
@@ -79,8 +101,9 @@ export interface Game {
   announcement: Announcement | null;
   pendingHunterId: string | null; // asılan avcı, atış hakkı bekliyor
   hangedThisDay: boolean; // bu gündüz birisi asıldı mı (yeni geceye geçiş şartı)
-  winner: Team | null;
+  winner: Winner | null;
   log: { text: string; at: number }[];
+  roundLog: RoundEvent[]; // moderatör tur raporu (gece/infaz detayları)
   version: number; // her değişimde artar (SSE değişiklik tespiti)
   updatedAt: number;
 }
@@ -144,10 +167,18 @@ export interface ParticipantView {
   turn: TurnInfo | null; // sıra bendeyse dolu
   nightActive: boolean;
   announcement: Announcement | null;
-  winner: Team | null;
+  winner: Winner | null;
   // Oyun bitince tüm roller açığa çıkar
   reveal:
-    | { id: string; name: string; roleName: string | null; team: Team | null; alive: boolean }[]
+    | {
+        id: string;
+        name: string;
+        roleName: string | null;
+        roleKey: string | null;
+        team: Team | null;
+        special?: "avci" | "doktor" | "medyum" | "soytari";
+        alive: boolean;
+      }[]
     | null;
   version: number;
 }
