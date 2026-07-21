@@ -611,6 +611,13 @@ function turnFor(game: Game, self: Player): TurnInfo | null {
   if (cur === "vampir" && role.team === "vampir") {
     const counts = new Map<string, number>();
     for (const t of Object.values(game.night.vampireVotes)) counts.set(t, (counts.get(t) ?? 0) + 1);
+    const mates = alivePlayers(game)
+      .filter((p) => roleTeam(game, p.role) === "vampir" && p.id !== self.id)
+      .map((v) => ({
+        id: v.id,
+        name: v.name,
+        targetName: game.night.vampireVotes[v.id] ? playerName(game, game.night.vampireVotes[v.id]) : null,
+      }));
     return {
       kind: "vampir",
       candidates: alivePlayers(game)
@@ -618,6 +625,7 @@ function turnFor(game: Game, self: Player): TurnInfo | null {
         .map((p) => ({ id: p.id, name: p.name })),
       myPick: game.night.vampireVotes[self.id] ?? null,
       teamPicks: [...counts.entries()].map(([id, count]) => ({ id, name: playerName(game, id), count })),
+      mates,
     };
   }
   if (cur === "doktor" && role.special === "doktor") {

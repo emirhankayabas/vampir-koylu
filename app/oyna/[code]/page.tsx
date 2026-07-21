@@ -428,18 +428,40 @@ function TurnScreen({ turn, selfId, code }: { turn: TurnInfo; selfId: string; co
         {turn.note && <p className="mt-1 text-xs text-[var(--faint)]">💡 {turn.note}</p>}
       </div>
 
-      {turn.teamPicks && turn.teamPicks.length > 0 && (
-        <div className="mt-3 rounded-xl bg-[rgba(239,68,68,0.08)] p-2 text-center text-xs text-[#fca5a5]">
-          Kardeşlerin: {turn.teamPicks.map((t) => `${t.name} (${t.count})`).join(" · ")}
+      {turn.mates && turn.mates.length > 0 && (
+        <div className="mt-3 rounded-xl border border-[rgba(239,68,68,0.25)] bg-[rgba(239,68,68,0.08)] p-3 text-xs">
+          <p className="mb-1 font-semibold text-[#fca5a5]">🩸 Kardeşlerinin seçimi</p>
+          <ul className="space-y-0.5">
+            {turn.mates.map((m) => (
+              <li key={m.id} className="flex items-center justify-between">
+                <span>{m.name}</span>
+                <span style={{ color: m.targetName ? "#fca5a5" : "var(--faint)" }}>
+                  {m.targetName ? `→ ${m.targetName}` : "seçmedi…"}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[10px] text-[var(--faint)]">Herkesin oyu tamamlanınca en çok oyu alan tek kişi ölür — anlaşın.</p>
         </div>
       )}
 
       <div className="mt-4 grid grid-cols-2 gap-2">
-        {turn.candidates.map((c) => (
-          <button key={c.id} disabled={locked} onClick={() => { buzz(); setSel(c.id); }} className={`pick ${sel === c.id ? "pick-on" : ""}`} style={{ ["--sel" as string]: theme.color }}>
-            {c.name}
-          </button>
-        ))}
+        {turn.candidates.map((c) => {
+          const n = turn.kind === "vampir" ? turn.teamPicks?.find((t) => t.id === c.id)?.count ?? 0 : 0;
+          return (
+            <button key={c.id} disabled={locked} onClick={() => { buzz(); setSel(c.id); }} className={`pick relative ${sel === c.id ? "pick-on" : ""}`} style={{ ["--sel" as string]: theme.color }}>
+              {c.name}
+              {n > 0 && (
+                <span
+                  className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-bold"
+                  style={{ background: theme.color, color: "#1a0606" }}
+                >
+                  {n}
+                </span>
+              )}
+            </button>
+          );
+        })}
       </div>
 
       <div className="mt-4 flex gap-2">

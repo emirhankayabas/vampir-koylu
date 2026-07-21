@@ -32,21 +32,60 @@ export function clearPlayerId(code: string) {
   idListeners.forEach((l) => l());
 }
 
-// SSE ile canlı durum aboneliği. Tarayıcının EventSource'u bağlantı
-// koptuğunda (fonksiyon ~4dk sonra kapanınca) otomatik yeniden bağlanır.
+// SSE ile canlı durum aboneliği. Tarayıcının EventSource'u kopan bağlantıyı
+// normalde otomatik yeniden bağlar; ancak mobilde sekme arka plana atılıp
+// kilitlenince bağlantı "sessizce" ölebilir ve durum güncellemeleri durur
+// (kullanıcı sayfayı yenilemek zorunda kalır). Bunu önlemek için:
+//  • Sunucu ~5 sn'de bir kalp atışı (hb) yollar; hiç mesaj gelmezse bağlantı
+//    ölmüş sayılıp yeniden kurulur (watchdog).
+//  • Sekme tekrar görünür olunca anında taze bağlantı açılır.
+const WATCHDOG_MS = 20000;
+
 export function useStream<T>(url: string | null): T | null {
   const [data, setData] = useState<T | null>(null);
   useEffect(() => {
     if (!url) return;
-    const es = new EventSource(url);
-    es.onmessage = (e) => {
-      try {
-        setData(JSON.parse(e.data));
-      } catch {
-        /* ping veya bozuk mesaj — yok say */
-      }
+    let es: EventSource | null = null;
+    let watchdog: ReturnType<typeof setTimeout> | null = null;
+    let stopped = false;
+
+    const arm = () => {
+      if (watchdog) clearTimeout(watchdog);
+      watchdog = setTimeout(connect, WATCHDOG_MS);
     };
-    return () => es.close();
+
+    const connect = () => {
+      if (stopped) return;
+      if (es) es.close();
+      es = new EventSource(url);
+      arm();
+      es.onopen = arm;
+      es.onmessage = (e) => {
+        arm(); // her mesaj (kalp atışı dahil) bağlantının canlı olduğunu gösterir
+        try {
+          const parsed = JSON.parse(e.data);
+          if (parsed && parsed.hb) return; // kalp atışı — durum değil, yok say
+          setData(parsed as T);
+        } catch {
+          /* bozuk mesaj — yok say */
+        }
+      };
+      es.onerror = arm; // tarayıcı kendi yeniden bağlanmayı dener; watchdog yedek
+    };
+
+    const onVisible = () => {
+      if (document.visibilityState === "visible") connect();
+    };
+
+    connect();
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      stopped = true;
+      if (watchdog) clearTimeout(watchdog);
+      document.removeEventListener("visibilitychange", onVisible);
+      if (es) es.close();
+    };
   }, [url]);
   return data;
 }

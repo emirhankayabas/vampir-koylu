@@ -28,9 +28,11 @@ export async function GET(request: NextRequest) {
         if (closed) return;
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
       };
+      // Kalp atışı: yorum yerine veri mesajı gönderiyoruz ki istemci de
+      // bağlantının canlı olduğunu görebilsin (watchdog için). Durum değil.
       const ping = () => {
         if (closed) return;
-        controller.enqueue(encoder.encode(`: ping\n\n`));
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ hb: 1 })}\n\n`));
       };
 
       const project = async () => {
@@ -62,8 +64,8 @@ export async function GET(request: NextRequest) {
             const view = await project();
             lastVersion = view.version;
             send(view);
-          } else if (++heartbeat % 15 === 0) {
-            ping(); // bağlantıyı canlı tut
+          } else if (++heartbeat % 10 === 0) {
+            ping(); // ~5 sn'de bir bağlantıyı canlı tut + istemci watchdog'unu besle
           }
         } catch {
           // yut, sonraki turda tekrar dener

@@ -108,8 +108,10 @@ export interface TurnInfo {
   candidates: { id: string; name: string }[]; // seçilebilecek hedefler
   myPick: string | null; // mevcut seçim
   note?: string; // ekranda gösterilecek küçük ipucu (örn. doktor self-protect durumu)
-  // Yalnızca vampirler: takım arkadaşlarının canlı seçim sayımı
+  // Yalnızca vampirler: her hedefin aldığı vampir oyu sayısı (aday butonlarında rozet)
   teamPicks?: { id: string; name: string; count: number }[];
+  // Yalnızca vampirler: her takım arkadaşının o anki seçimi (canlı, tek tek)
+  mates?: { id: string; name: string; targetName: string | null }[];
 }
 
 export interface ParticipantSelf {
