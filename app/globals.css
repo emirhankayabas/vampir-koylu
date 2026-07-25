@@ -148,21 +148,25 @@ body > * {
   border-radius: 18px;
   overflow: hidden;
 }
-/* Ana CTA'larda ara ara geçen ışık huzmesi — canlı, "oyun" hissi. */
+/* Ana CTA'larda ara ara geçen ışık huzmesi — canlı, "oyun" hissi.
+   transform (translateX) ile hareket eder: GPU-hızlandırmalı, tekrar ederken
+   takılmaz. Huzme her iki uçta (ekran dışı) durduğu için döngü başı görünmez. */
 .btn-lg::before {
   content: "";
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(115deg, transparent 34%, rgba(255, 255, 255, 0.38) 50%, transparent 66%);
-  background-size: 250% 100%;
-  background-position: 200% 0;
+  top: -25%;
+  left: 0;
+  width: 45%;
+  height: 150%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  transform: translateX(-200%) skewX(-20deg);
   animation: sheen 4.5s ease-in-out infinite;
   pointer-events: none;
+  will-change: transform;
 }
 @keyframes sheen {
-  0% { background-position: 200% 0; }
-  60%, 100% { background-position: -120% 0; }
+  0% { transform: translateX(-200%) skewX(-20deg); }
+  55%, 100% { transform: translateX(420%) skewX(-20deg); }
 }
 
 .btn-blood {

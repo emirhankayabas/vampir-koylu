@@ -11,7 +11,7 @@ export type Phase = "night" | "day";
 export type AssignMode = "random" | "manual";
 
 // Gece sırasında aktif olan rol grupları
-export type NightRole = "vampir" | "doktor" | "medyum";
+export type NightRole = "vampir" | "doktor" | "medyum" | "survivor";
 
 export interface RoleConfig {
   key: string; // benzersiz anahtar, örn "vampir"
@@ -21,7 +21,7 @@ export interface RoleConfig {
   count: number; // kaç kişiye dağıtılacak (fill=true olan hariç)
   fill?: boolean; // geri kalan herkes bu role atanır (Köylü)
   builtin?: boolean; // varsayılan rol mü (silinemez)
-  special?: "avci" | "doktor" | "medyum" | "soytari"; // özel yetenek / tarafsız işaretçisi
+  special?: "avci" | "doktor" | "medyum" | "soytari" | "survivor"; // özel yetenek / tarafsız işaretçisi
 }
 
 export interface Player {
@@ -45,6 +45,8 @@ export interface NightState {
   vampireVotes: Record<string, string>; // vampirId -> hedefId
   doctorTarget: string | null; // doktorun koruduğu
   mediumTarget: string | null; // medyumun incelediği (bu gece)
+  survivorShields: string[]; // bu gece kalkanını açan Survivor id'leri
+  survivorDecided: string[]; // bu gece kalkan kararını (kullan/geç) veren Survivor id'leri
 }
 
 // Medyumun gece boyunca öğrendiği bilgiler (kişiye özel geçmiş)
@@ -71,6 +73,7 @@ export interface RoundEvent {
   vampTarget?: string | null; // vampirlerin seçtiği hedef
   doctorTarget?: string | null; // doktorun koruduğu kişi
   saved?: boolean; // doktor saldırıyı engelledi mi
+  survivorShielded?: boolean; // hedef, kalkanını açan bir Survivor'dı (saldırı boşa gitti)
   mediumTarget?: string | null; // medyumun incelediği kişi
   mediumResult?: Team | null; // inceleme sonucu (vampir/köy)
   deaths: RoundDeath[]; // bu turda ölenler
@@ -87,17 +90,22 @@ export interface Announcement {
 
 export interface Game {
   _id: string; // sabit "active"
+  name: string; // oda adı (moderatör düzenler; boşsa kod gösterilir)
+  password: string | null; // katılım şifresi (null = şifresiz)
   status: GameStatus;
   mode: GameMode;
   assignMode: AssignMode; // rol dağıtımı rastgele mi moderatör mü seçiyor
   phase: Phase;
   dayNumber: number;
   roles: RoleConfig[];
+  loversEnabled: boolean; // Âşıklar özelliği açık mı (oyun başında 2 kişi âşık olur)
+  lovers: [string, string] | null; // âşık olan iki oyuncunun id'leri (yoksa null)
   players: Player[];
   vote: VoteState;
   night: NightState;
   mediumLog: MediumReading[];
   doctorSelfUsed: string[]; // kendini koruma hakkını kullanan doktor id'leri (oyun boyu 1 kez)
+  survivorShieldsUsed: Record<string, number>; // her Survivor'ın harcadığı kalkan sayısı (oyun boyu, en fazla 2)
   announcement: Announcement | null;
   pendingHunterId: string | null; // asılan avcı, atış hakkı bekliyor
   hangedThisDay: boolean; // bu gündüz birisi asıldı mı (yeni geceye geçiş şartı)
@@ -105,6 +113,18 @@ export interface Game {
   log: { text: string; at: number }[];
   roundLog: RoundEvent[]; // moderatör tur raporu (gece/infaz detayları)
   version: number; // her değişimde artar (SSE değişiklik tespiti)
+  updatedAt: number;
+}
+
+// Oda listeleme (mevcut oyunlar sayfası) — şifre asla dahil edilmez, yalnızca var/yok.
+export interface RoomSummary {
+  code: string;
+  name: string;
+  status: GameStatus;
+  phase: Phase;
+  mode: GameMode;
+  playerCount: number;
+  hasPassword: boolean;
   updatedAt: number;
 }
 
@@ -144,12 +164,16 @@ export interface ParticipantSelf {
   alive: boolean;
   teammates: { id: string; name: string }[]; // vampirler için diğer vampirler
   readings: { targetName: string; team: Team; day: number }[]; // medyum için
+  survivorShieldsLeft?: number | null; // Survivor için kalan kalkan hakkı
+  loverName?: string | null; // âşıksa partnerinin adı (rolü DEĞİL, yalnızca isim)
 }
 
 export interface ParticipantView {
   role: "participant";
   forPlayerId: string | null; // bu görünüm hangi playerId için üretildi (stale veri ayrımı)
   exists: boolean; // oyuncu hâlâ oyunda mı (kick/reset tespiti)
+  roomName: string; // oda adı (boşsa istemci kodu gösterir)
+  hasPassword: boolean; // katılım şifre gerektiriyor mu (şifrenin kendisi sızdırılmaz)
   status: GameStatus;
   mode: GameMode;
   phase: Phase;
@@ -168,6 +192,8 @@ export interface ParticipantView {
   nightActive: boolean;
   announcement: Announcement | null;
   winner: Winner | null;
+  // Oyun bitince âşık çiftin isimleri (herkese açılır); yoksa null
+  loverPair: { a: string; b: string } | null;
   // Oyun bitince tüm roller açığa çıkar
   reveal:
     | {
@@ -176,7 +202,7 @@ export interface ParticipantView {
         roleName: string | null;
         roleKey: string | null;
         team: Team | null;
-        special?: "avci" | "doktor" | "medyum" | "soytari";
+        special?: "avci" | "doktor" | "medyum" | "soytari" | "survivor";
         alive: boolean;
       }[]
     | null;

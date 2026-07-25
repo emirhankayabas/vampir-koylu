@@ -290,7 +290,9 @@ export function RoleGlyph({
             ? CrosshairIcon
             : key === "soytari"
               ? JesterIcon
-              : VillagerIcon;
+              : key === "survivor"
+                ? ShieldIcon
+                : VillagerIcon;
   return <Comp size={size} className={className} style={style} strokeWidth={strokeWidth} />;
 }
 

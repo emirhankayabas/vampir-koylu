@@ -2,9 +2,90 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion } from "motion/react";
+import { motion, AnimatePresence } from "motion/react";
 import { ArrowLeftIcon, CopyIcon, CheckIcon } from "@/app/_lib/icons";
 import type { Phase } from "@/lib/types";
+
+/* ============================================================
+   Modal sistemi — ortada açılan, arka planı karartan diyalog.
+   Onay gerektiren tüm olaylar (odayı kapat, sıfırla, çıkış…) bunu kullanır.
+   ============================================================ */
+
+export function Modal({
+  open,
+  onClose,
+  children,
+  maxW = "max-w-xs",
+}: {
+  open: boolean;
+  onClose?: () => void;
+  children: React.ReactNode;
+  maxW?: string;
+}) {
+  return (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 px-6 backdrop-blur-sm"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ scale: 0.9, y: 12, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+            exit={{ scale: 0.92, y: 8, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 260, damping: 22 }}
+            onClick={(e) => e.stopPropagation()}
+            className={`panel w-full ${maxW} p-5 text-center`}
+          >
+            {children}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+/* Standart onay modalı — başlık, açıklama ve Evet/Vazgeç düğmeleri. */
+export function ConfirmModal({
+  open,
+  title,
+  body,
+  icon,
+  confirmLabel = "Evet",
+  cancelLabel = "Vazgeç",
+  danger = true,
+  busy = false,
+  onConfirm,
+  onCancel,
+}: {
+  open: boolean;
+  title: string;
+  body?: string;
+  icon?: React.ReactNode;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  danger?: boolean;
+  busy?: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  return (
+    <Modal open={open} onClose={busy ? undefined : onCancel}>
+      {icon && <div className="text-4xl">{icon}</div>}
+      <p className="mt-2 font-display text-lg font-bold">{title}</p>
+      {body && <p className="mt-1 text-sm text-[var(--muted)]">{body}</p>}
+      <div className="mt-4 flex gap-2">
+        <button onClick={onConfirm} disabled={busy} className={`btn ${danger ? "btn-blood" : "btn-emerald"} flex-1`}>
+          {busy ? "İşleniyor…" : confirmLabel}
+        </button>
+        <button onClick={onCancel} disabled={busy} className="btn btn-ghost flex-1">{cancelLabel}</button>
+      </div>
+    </Modal>
+  );
+}
 
 /* Gece/gündüz sahnesi — tam ekran arka plan, faza göre çapraz geçiş.
    Gece: kararır, ay çıkar. Gündüz: aydınlanır, güneş çıkar. */
@@ -92,29 +173,15 @@ export function TopBar({ code, inGame, showCode = true }: { code: string; inGame
         )}
       </div>
 
-      {confirm && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-6"
-          onClick={() => setConfirm(false)}
-        >
-          <motion.div
-            initial={{ scale: 0.9, y: 10 }}
-            animate={{ scale: 1, y: 0 }}
-            onClick={(e) => e.stopPropagation()}
-            className="panel w-full max-w-xs p-5 text-center"
-          >
-            <div className="text-4xl">🚪</div>
-            <p className="mt-2 font-display text-lg font-bold">Oyundan çıkılsın mı?</p>
-            <p className="mt-1 text-sm text-[var(--muted)]">Bu odadan ayrılacaksın. Aynı kodla tekrar girebilirsin.</p>
-            <div className="mt-4 flex gap-2">
-              <button onClick={() => router.push("/")} className="btn btn-blood flex-1">Çık</button>
-              <button onClick={() => setConfirm(false)} className="btn btn-ghost flex-1">Vazgeç</button>
-            </div>
-          </motion.div>
-        </motion.div>
-      )}
+      <ConfirmModal
+        open={confirm}
+        icon="🚪"
+        title="Oyundan çıkılsın mı?"
+        body="Bu odadan ayrılacaksın. Aynı kodla tekrar girebilirsin."
+        confirmLabel="Çık"
+        onConfirm={() => router.push("/")}
+        onCancel={() => setConfirm(false)}
+      />
     </>
   );
 }

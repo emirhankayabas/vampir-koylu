@@ -3,7 +3,7 @@
 
 import type { RoleConfig } from "@/lib/types";
 
-export type SpecialKey = "avci" | "doktor" | "medyum" | "soytari";
+export type SpecialKey = "avci" | "doktor" | "medyum" | "soytari" | "survivor";
 
 export interface RoleMeta {
   icon: string; // emoji ikon
@@ -59,6 +59,14 @@ const META: Record<string, RoleMeta> = {
     accent: "#ec4899",
     glow: "rgba(236,72,153,0.45)",
   },
+  survivor: {
+    icon: "🛡️",
+    tagline: "Tarafsız hayatta kalan",
+    ability:
+      "Bir tarafın değil, kendi hayatının derdindesin. Gece 2 kez kalkanını açarak o gece sana gelen tüm saldırıları savuşturabilirsin (kalkan asılmayı engellemez). Oyun bittiğinde HAYATTAYSAN, kazanan taraf hangisiyse onunla birlikte kazanırsın.",
+    accent: "#2dd4bf",
+    glow: "rgba(45,212,191,0.45)",
+  },
 };
 
 const FALLBACK: RoleMeta = {
@@ -85,9 +93,10 @@ export function metaByKey(key: string, special?: SpecialKey): RoleMeta {
   return META[key] ?? FALLBACK;
 }
 
-// Gece sırası: küçük sayı önce oynar. Vampirler → Doktor → Medyum.
+// Gece sırası: küçük sayı önce oynar. Vampirler → Doktor → Medyum → Survivor.
 export const NIGHT_ORDER: Record<string, number> = {
   vampir: 1,
   doktor: 2,
   medyum: 3,
+  survivor: 4,
 };

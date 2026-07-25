@@ -6,6 +6,8 @@ import {
   saveGame,
   makeFreshGame,
   assignRolesFor,
+  assignLovers,
+  applyHeartbreak,
   checkWinner,
   finalizeWinner,
   beginNight,
@@ -63,6 +65,10 @@ export async function POST(request: NextRequest) {
     // --- Katılımcı aksiyonları ---
     case "join": {
       if (game.status !== "lobby") return bad("Oyun şu an katılıma kapalı.");
+      // Şifreli oda ise doğru şifre gerekir (şifresiz odalarda bu alan yok sayılır).
+      if (game.password && String(body.password ?? "") !== game.password) {
+        return bad("Oda şifresi hatalı.");
+      }
       const name = String(body.name ?? "").trim();
       if (!name) return bad("İsim boş olamaz.");
       if (name.length > 24) return bad("İsim çok uzun.");
@@ -105,7 +111,7 @@ export async function POST(request: NextRequest) {
       const playerId = String(body.playerId ?? "");
       const kind = String(body.kind ?? "") as NightRole;
       const targetId = String(body.targetId ?? "");
-      if (!["vampir", "doktor", "medyum"].includes(kind)) return bad("Geçersiz aksiyon türü.");
+      if (!["vampir", "doktor", "medyum", "survivor"].includes(kind)) return bad("Geçersiz aksiyon türü.");
       const res = submitNightAction(game, playerId, kind, targetId);
       if (!res.ok) return bad(res.error!);
       await saveGame(game);
@@ -119,6 +125,30 @@ export async function POST(request: NextRequest) {
       const targetId = body.targetId ? String(body.targetId) : null;
       const res = hunterShoot(game, targetId);
       if (!res.ok) return bad(res.error!);
+      await saveGame(game);
+      return ok();
+    }
+
+    // --- Moderatör: oda ayarları ---
+    case "setRoomName": {
+      game.name = String(body.name ?? "").trim().slice(0, 40);
+      await saveGame(game);
+      return ok();
+    }
+
+    // Katılım şifresini ayarlar/temizler. Boş gönderilirse şifre kaldırılır.
+    case "setRoomPassword": {
+      const pw = String(body.password ?? "").trim();
+      game.password = pw ? pw.slice(0, 40) : null;
+      log(game, pw ? "Oda şifresi ayarlandı." : "Oda şifresi kaldırıldı.");
+      await saveGame(game);
+      return ok();
+    }
+
+    // Âşıklar özelliğini aç/kapat (yalnızca lobide)
+    case "setLovers": {
+      if (game.status === "in_progress") return bad("Oyun sürerken değiştirilemez.");
+      game.loversEnabled = !!body.enabled;
       await saveGame(game);
       return ok();
     }
@@ -194,6 +224,7 @@ export async function POST(request: NextRequest) {
     case "newRound": {
       const res = assignRolesFor(game);
       if (!res.ok) return bad(res.error!);
+      assignLovers(game); // Âşıklar açıksa rastgele 2 uygun oyuncuyu eşleştirir
       game.status = "in_progress";
       game.dayNumber = 1;
       game.winner = null;
@@ -203,6 +234,7 @@ export async function POST(request: NextRequest) {
       game.vote = { active: false, votes: {} };
       game.mediumLog = [];
       game.doctorSelfUsed = [];
+      game.survivorShieldsUsed = {};
       game.roundLog = [];
       log(game, action === "newRound" ? "Yeni el başladı." : "Oyun başladı. Roller dağıtıldı.");
       if (game.mode === "phone") {
@@ -261,6 +293,13 @@ export async function POST(request: NextRequest) {
           const r = roleOf(game, p.role);
           names.push(p.name);
           dead.push({ name: p.name, role: r?.name ?? "?", team: r?.team ?? "koy" });
+          // Âşık öldüyse partneri de kahrından ölür.
+          const hb = applyHeartbreak(game, p.id);
+          if (hb) {
+            const hbRole = roleOf(game, hb.role);
+            names.push(`${hb.name} 💔`);
+            dead.push({ name: hb.name, role: hbRole?.name ?? "?", team: hbRole?.team ?? "koy" });
+          }
         }
       }
       game.phase = "day";
@@ -328,15 +367,26 @@ export async function POST(request: NextRequest) {
       }
 
       const shown = role?.team === "vampir" ? "Vampir" : "Köylü";
+      const lines = [`${target.name} asıldı.`, `Rolü: ${shown}`];
+      const roundDeaths: RoundDeath[] = [{ name: target.name, role: role?.name ?? "?", team: role?.team ?? "koy" }];
+      // Âşık asıldıysa partneri de kahrından ölür.
+      const hb = applyHeartbreak(game, target.id);
+      if (hb) {
+        const hbRole = roleOf(game, hb.role);
+        const hbShown = hbRole?.team === "vampir" ? "Vampir" : "Köylü";
+        lines.push(`💔 ${hb.name} âşığının ardından dayanamadı.`);
+        lines.push(`Rolü: ${hbShown}`);
+        roundDeaths.push({ name: hb.name, role: hbRole?.name ?? "?", team: hbRole?.team ?? "koy" });
+      }
       game.announcement = {
         kind: "hang",
         title: "İnfaz",
-        lines: [`${target.name} asıldı.`, `Rolü: ${shown}`],
+        lines,
         dead: { name: target.name, roleName: shown, team: role?.team ?? "koy" },
         at: Date.now(),
       };
       log(game, `${target.name} asıldı.`);
-      recordRound(game, { day: game.dayNumber, kind: "hang", at: Date.now(), deaths: [{ name: target.name, role: role?.name ?? "?", team: role?.team ?? "koy" }] });
+      recordRound(game, { day: game.dayNumber, kind: "hang", at: Date.now(), deaths: roundDeaths });
       if (role?.special === "avci") {
         game.pendingHunterId = target.id;
         log(game, `${target.name} (Avcı) atış hakkı kazandı.`);
@@ -393,6 +443,8 @@ export async function POST(request: NextRequest) {
       game.announcement = null;
       game.mediumLog = [];
       game.doctorSelfUsed = [];
+      game.survivorShieldsUsed = {};
+      game.lovers = null;
       game.roundLog = [];
       game.players.forEach((p) => {
         p.role = null;
@@ -413,6 +465,9 @@ export async function POST(request: NextRequest) {
       const fresh = makeFreshGame(game._id);
       fresh.roles = game.roles;
       fresh.mode = game.mode;
+      fresh.name = game.name;
+      fresh.password = game.password;
+      fresh.loversEnabled = game.loversEnabled;
       fresh.version = game.version;
       log(fresh, "Oyun sıfırlandı.");
       await saveGame(fresh);

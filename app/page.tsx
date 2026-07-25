@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { postAction, savePlayerId } from "@/app/_lib/client";
-import { Crest, RoleGlyph, PlayIcon, KeyIcon, ArrowLeftIcon } from "@/app/_lib/icons";
+import { Crest, RoleGlyph, PlayIcon, KeyIcon, ArrowLeftIcon, HomeIcon } from "@/app/_lib/icons";
 import { metaByKey } from "@/lib/roles";
 import type { RoleConfig } from "@/lib/types";
 
@@ -22,6 +22,7 @@ export default function Home() {
   const [view, setView] = useState<"home" | "join">("home");
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
+  const [pw, setPw] = useState("");
   const [busy, setBusy] = useState<null | "create" | "join">(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +47,7 @@ export default function Home() {
     }
     setBusy("join");
     setError(null);
-    const res = await postAction("join", { code: c, name: n });
+    const res = await postAction("join", { code: c, name: n, password: pw });
     if (res.ok && res.playerId) {
       savePlayerId(c, res.playerId);
       router.push(`/oyna/${c}`);
@@ -137,6 +138,21 @@ export default function Home() {
               <KeyIcon size={22} />
               Oyuna Katıl
             </button>
+            <button
+              onClick={() => router.push("/odalar")}
+              disabled={busy !== null}
+              className="btn btn-ghost btn-lg"
+            >
+              <HomeIcon size={22} />
+              Mevcut Oyunlar
+            </button>
+            <button
+              onClick={() => router.push("/nasil-oynanir")}
+              disabled={busy !== null}
+              className="mt-1 text-center text-sm font-semibold text-[var(--violet)] transition hover:text-[var(--ink)]"
+            >
+              📖 Nasıl Oynanır? · Roller ve Kurallar
+            </button>
             {error && <p className="mt-1 text-center text-sm text-[var(--blood)]">{error}</p>}
 
             <div className="panel mt-5 flex items-start gap-3 p-4 text-left">
@@ -173,10 +189,19 @@ export default function Home() {
             <input
               value={code}
               onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
-              onKeyDown={(e) => e.key === "Enter" && joinRoom()}
               inputMode="numeric"
               placeholder="000000"
               className="input code-input"
+            />
+            <label className="mb-1.5 mt-4 block text-xs uppercase tracking-wider text-[var(--faint)]">Şifre <span className="normal-case text-[var(--faint)]">(gerekiyorsa)</span></label>
+            <input
+              value={pw}
+              onChange={(e) => setPw(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && joinRoom()}
+              type="password"
+              placeholder="Oda şifresiz ise boş bırak"
+              maxLength={40}
+              className="input"
             />
             {error && <p className="mt-3 text-center text-sm text-[var(--blood)]">{error}</p>}
             <button onClick={joinRoom} disabled={busy !== null} className="btn btn-emerald btn-lg mt-5 w-full">

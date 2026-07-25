@@ -9,7 +9,7 @@ import { SceneBackdrop, TopBar, Spinner } from "@/app/_lib/ui";
 import { roleMeta } from "@/lib/roles";
 import {
   RoleGlyph, Burst, CrownIcon, BatIcon, JesterIcon, MoonIcon, SunIcon, SkullIcon,
-  BallotIcon, CheckIcon, CrossIcon, CrystalIcon, CrosshairIcon,
+  BallotIcon, CheckIcon, CrossIcon, CrystalIcon, CrosshairIcon, ShieldIcon, LockIcon,
 } from "@/app/_lib/icons";
 
 const TURN_ICON: Record<TurnInfo["kind"], (p: { size?: number; strokeWidth?: number }) => React.ReactElement> = {
@@ -17,6 +17,7 @@ const TURN_ICON: Record<TurnInfo["kind"], (p: { size?: number; strokeWidth?: num
   doktor: (p) => <CrossIcon {...p} />,
   medyum: (p) => <CrystalIcon {...p} />,
   hunter: (p) => <CrosshairIcon {...p} />,
+  survivor: (p) => <ShieldIcon {...p} />,
 };
 import type { ParticipantView, TurnInfo, Team, Announcement } from "@/lib/types";
 
@@ -35,6 +36,7 @@ export default function OynaPage() {
   const code = Array.isArray(params.code) ? params.code[0] : (params.code as string) ?? "";
   const playerId = usePlayerId(code);
   const [name, setName] = useState("");
+  const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -53,9 +55,11 @@ export default function OynaPage() {
   async function join() {
     const trimmed = name.trim();
     if (!trimmed) return;
+    // Şifreli odada şifre de zorunlu.
+    if (view?.hasPassword && !pw.trim()) return;
     setBusy(true);
     setError(null);
-    const res = await postAction("join", { code, name: trimmed });
+    const res = await postAction("join", { code, name: trimmed, password: pw });
     setBusy(false);
     if (res.ok && res.playerId) {
       savePlayerId(code, res.playerId);
@@ -117,8 +121,11 @@ export default function OynaPage() {
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="mt-8">
           <div className="mb-7 text-center">
             <div className="text-6xl float-slow">🧛</div>
-            <h1 className="font-display title-glow mt-3 text-3xl font-black">Odaya Katıl</h1>
+            <h1 className="font-display title-glow mt-3 text-3xl font-black">{view.roomName?.trim() || "Odaya Katıl"}</h1>
             <p className="mt-1 text-sm text-[var(--faint)]">Oda kodu: <b className="code-chip">{code}</b></p>
+            {view.hasPassword && (
+              <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-[var(--amber)]"><LockIcon size={13} /> Bu oda şifreli</p>
+            )}
           </div>
           <form onSubmit={(e) => { e.preventDefault(); join(); }}>
             <input
@@ -127,11 +134,26 @@ export default function OynaPage() {
               placeholder="İsminiz"
               maxLength={24}
               autoFocus
-              enterKeyHint="go"
+              enterKeyHint={view.hasPassword ? "next" : "go"}
               className="input"
             />
+            {view.hasPassword && (
+              <input
+                value={pw}
+                onChange={(e) => setPw(e.target.value)}
+                placeholder="Oda şifresi"
+                type="password"
+                maxLength={40}
+                enterKeyHint="go"
+                className="input mt-3"
+              />
+            )}
             {error && <p className="mt-2 text-sm text-[var(--blood)]">{error}</p>}
-            <button type="submit" disabled={busy || !name.trim()} className="btn btn-blood btn-lg mt-4 w-full">
+            <button
+              type="submit"
+              disabled={busy || !name.trim() || (view.hasPassword && !pw.trim())}
+              className="btn btn-blood btn-lg mt-4 w-full"
+            >
               {busy ? "Katılıyor…" : "Köye Gir"}
             </button>
           </form>
@@ -249,7 +271,8 @@ function RoleCard({ self }: { self: NonNullable<ParticipantView["self"]> }) {
   const [showAbility, setShowAbility] = useState(false);
   const meta = roleMeta(self.role);
   const evil = self.role?.team === "vampir";
-  const neutral = self.role?.special === "soytari";
+  const isJester = self.role?.special === "soytari";
+  const isSurvivor = self.role?.special === "survivor";
   const accent = meta.accent;
 
   useEffect(() => {
@@ -316,8 +339,10 @@ function RoleCard({ self }: { self: NonNullable<ParticipantView["self"]> }) {
       </div>
 
       <div className="mt-3 flex items-center gap-2">
-        {neutral ? (
+        {isJester ? (
           <span className="badge" style={{ background: "rgba(236,72,153,0.18)", color: "#f9a8d4" }}>🃏 Tarafsız · Soytarı</span>
+        ) : isSurvivor ? (
+          <span className="badge" style={{ background: "rgba(45,212,191,0.18)", color: "#5eead4" }}>🛡️ Tarafsız · Survivor</span>
         ) : (
           <span className="badge" style={{ background: evil ? "rgba(239,68,68,0.16)" : "rgba(52,211,153,0.16)", color: evil ? "#fca5a5" : "#6ee7b7" }}>
             {evil ? "🧛 Vampir takımı" : "🏡 Köy takımı"}
@@ -328,10 +353,27 @@ function RoleCard({ self }: { self: NonNullable<ParticipantView["self"]> }) {
         </button>
       </div>
 
-      {neutral && (
+      {isJester && (
         <div className="mt-3 rounded-xl border p-3" style={{ borderColor: "rgba(236,72,153,0.35)", background: "rgba(236,72,153,0.08)" }}>
           <p className="text-xs font-semibold" style={{ color: "#f9a8d4" }}>🎯 Amacın</p>
           <p className="mt-1 text-sm text-[var(--muted)]">Gündüz oylamasında <b className="text-[var(--ink)]">kendini astır</b>. Başarırsan tek başına kazanırsın! Vampirler seni öldürürse ya da bir taraf kazanırsa kaybedersin.</p>
+        </div>
+      )}
+
+      {isSurvivor && (
+        <div className="mt-3 rounded-xl border p-3" style={{ borderColor: "rgba(45,212,191,0.35)", background: "rgba(45,212,191,0.08)" }}>
+          <p className="text-xs font-semibold" style={{ color: "#5eead4" }}>🎯 Amacın</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Oyun bitene kadar <b className="text-[var(--ink)]">hayatta kal</b>. Kazanan taraf hangisiyse onunla birlikte kazanırsın. Gece <b className="text-[var(--ink)]">kalkanını</b> açarak o gece sana gelen saldırıları savuşturabilirsin — ama asılmaya karşı işe yaramaz.</p>
+          {typeof self.survivorShieldsLeft === "number" && (
+            <div className="mt-2 flex items-center gap-1.5">
+              {Array.from({ length: 2 }).map((_, i) => (
+                <span key={i} style={{ color: i < self.survivorShieldsLeft! ? "#2dd4bf" : "rgba(255,255,255,0.18)" }}>
+                  <ShieldIcon size={18} />
+                </span>
+              ))}
+              <span className="ml-1 text-xs text-[var(--muted)]">{self.survivorShieldsLeft}/2 kalkan kaldı</span>
+            </div>
+          )}
         </div>
       )}
 
@@ -357,6 +399,15 @@ function RoleCard({ self }: { self: NonNullable<ParticipantView["self"]> }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {self.loverName && (
+        <div className="mt-3 rounded-xl border p-3" style={{ borderColor: "rgba(236,72,153,0.3)", background: "rgba(236,72,153,0.08)" }}>
+          <p className="text-xs font-semibold" style={{ color: "#f9a8d4" }}>💘 Âşığın</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            <b className="text-[var(--ink)]">{self.loverName}</b> ile âşıksın. Biriniz ölürse diğeri de kahrından ölür. (Rolünü bilmezsin.)
+          </p>
         </div>
       )}
 
@@ -416,12 +467,15 @@ const TURN_THEME: Record<TurnInfo["kind"], { icon: string; title: string; hint: 
   doktor: { icon: "🩺", title: "Kimi Koruyacaksın?", hint: "Vampirler ona saldırırsa kurtarırsın.", color: "#22d3ee", btn: "btn-moon" },
   medyum: { icon: "🔮", title: "Bir Ruhu Oku", hint: "Seçtiğinin takımını öğreneceksin.", color: "#a855f7", btn: "btn-violet" },
   hunter: { icon: "🏹", title: "Son Kurşun", hint: "Asıldın! Ölmeden birini yanında götür.", color: "#f59e0b", btn: "btn-amber" },
+  survivor: { icon: "🛡️", title: "Kalkanını Aç?", hint: "Bu gece sana gelen tüm saldırıları savuşturur.", color: "#2dd4bf", btn: "btn-moon" },
 };
 
 function TurnScreen({ turn, selfId, code }: { turn: TurnInfo; selfId: string; code: string }) {
   const [sel, setSel] = useState<string | null>(turn.myPick);
   const [busy, setBusy] = useState(false);
   const theme = TURN_THEME[turn.kind];
+
+  const isSurvivor = turn.kind === "survivor";
 
   async function confirm(skip = false) {
     if (!skip && !sel) return;
@@ -432,6 +486,14 @@ function TurnScreen({ turn, selfId, code }: { turn: TurnInfo; selfId: string; co
     } else {
       await postAction("nightAction", { code, playerId: selfId, kind: turn.kind, targetId: sel });
     }
+    setBusy(false);
+  }
+
+  // Survivor: hedef yok — kalkanı açar (targetId=kendisi) ya da bu geceyi es geçer.
+  async function decideShield(use: boolean) {
+    setBusy(true);
+    buzz(25);
+    await postAction("nightAction", { code, playerId: selfId, kind: "survivor", targetId: use ? selfId : "" });
     setBusy(false);
   }
 
@@ -468,34 +530,43 @@ function TurnScreen({ turn, selfId, code }: { turn: TurnInfo; selfId: string; co
         </div>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        {turn.candidates.map((c) => {
-          const n = turn.kind === "vampir" ? turn.teamPicks?.find((t) => t.id === c.id)?.count ?? 0 : 0;
-          return (
-            <button key={c.id} disabled={locked} onClick={() => { buzz(); setSel(c.id); }} className={`pick relative ${sel === c.id ? "pick-on" : ""}`} style={{ ["--sel" as string]: theme.color }}>
-              {c.name}
-              {n > 0 && (
-                <span
-                  className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-bold"
-                  style={{ background: theme.color, color: "#1a0606" }}
-                >
-                  {n}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {isSurvivor ? (
+        <div className="mt-5 flex gap-2">
+          <button onClick={() => decideShield(true)} disabled={busy} className={`btn ${theme.btn} flex-1`}>🛡️ Kalkanı aç</button>
+          <button onClick={() => decideShield(false)} disabled={busy} className="btn btn-ghost flex-1">Bu gece kullanma</button>
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {turn.candidates.map((c) => {
+              const n = turn.kind === "vampir" ? turn.teamPicks?.find((t) => t.id === c.id)?.count ?? 0 : 0;
+              return (
+                <button key={c.id} disabled={locked} onClick={() => { buzz(); setSel(c.id); }} className={`pick relative ${sel === c.id ? "pick-on" : ""}`} style={{ ["--sel" as string]: theme.color }}>
+                  {c.name}
+                  {n > 0 && (
+                    <span
+                      className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full px-1 text-[11px] font-bold"
+                      style={{ background: theme.color, color: "#1a0606" }}
+                    >
+                      {n}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
 
-      <div className="mt-4 flex gap-2">
-        <button onClick={() => confirm(false)} disabled={busy || !sel || locked} className={`btn ${theme.btn} flex-1`}>
-          {locked ? "Seçim yapıldı ✓" : turn.kind === "hunter" ? "🔫 Ateş et" : "Onayla"}
-        </button>
-        {turn.kind === "hunter" && (
-          <button onClick={() => confirm(true)} disabled={busy} className="btn btn-ghost">Vazgeç</button>
-        )}
-      </div>
-      {locked && <p className="mt-2 text-center text-xs text-[var(--faint)]">Diğer roller bekleniyor…</p>}
+          <div className="mt-4 flex gap-2">
+            <button onClick={() => confirm(false)} disabled={busy || !sel || locked} className={`btn ${theme.btn} flex-1`}>
+              {locked ? "Seçim yapıldı ✓" : turn.kind === "hunter" ? "🔫 Ateş et" : "Onayla"}
+            </button>
+            {turn.kind === "hunter" && (
+              <button onClick={() => confirm(true)} disabled={busy} className="btn btn-ghost">Vazgeç</button>
+            )}
+          </div>
+          {locked && <p className="mt-2 text-center text-xs text-[var(--faint)]">Diğer roller bekleniyor…</p>}
+        </>
+      )}
     </motion.div>
   );
 }
@@ -629,12 +700,16 @@ function EndScreen({ view }: { view: ParticipantView }) {
   // kazanınca soytarı kaybeder.
   const myTeam = view.self?.role?.team ?? null;
   const iAmJester = view.self?.role?.special === "soytari";
+  // Survivor'ın takımı yoktur: kim kazanırsa kazansın, oyun sonunda HAYATTAYSA kazanır.
+  const iAmSurvivor = view.self?.role?.special === "survivor";
   const iWon = decided
-    ? jester
-      ? iAmJester
-      : evil
-        ? myTeam === "vampir"
-        : myTeam === "koy" && !iAmJester
+    ? iAmSurvivor
+      ? !!view.self?.alive
+      : jester
+        ? iAmJester
+        : evil
+          ? myTeam === "vampir"
+          : myTeam === "koy" && !iAmJester
     : null;
 
   return (
@@ -708,13 +783,21 @@ function EndScreen({ view }: { view: ParticipantView }) {
                     <span style={{ color: m.accent }}><RoleGlyph role={rc} size={18} /></span>
                     {r.name}
                   </span>
-                  <span style={{ color: r.special === "soytari" ? "#f9a8d4" : teamColor(r.team) }}>{r.roleName ?? "—"}</span>
+                  <span style={{ color: r.special === "soytari" ? "#f9a8d4" : r.special === "survivor" ? "#5eead4" : teamColor(r.team) }}>{r.roleName ?? "—"}</span>
                 </motion.li>
               );
             })}
           </ul>
         </div>
       )}
+      {view.loverPair && (
+        <div className="panel mt-4 p-3 text-center" style={{ borderColor: "rgba(236,72,153,0.4)" }}>
+          <p className="text-sm" style={{ color: "#f9a8d4" }}>
+            💘 Âşıklardı: <b>{view.loverPair.a}</b> &amp; <b>{view.loverPair.b}</b>
+          </p>
+        </div>
+      )}
+
       <p className="mt-6 text-center text-sm text-[var(--faint)]">Yeni elin başlamasını bekleyin…</p>
     </div>
   );

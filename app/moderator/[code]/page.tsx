@@ -5,11 +5,11 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
 import { useStream, postAction } from "@/app/_lib/client";
-import { SceneBackdrop, TopBar, Spinner } from "@/app/_lib/ui";
+import { SceneBackdrop, TopBar, Spinner, ConfirmModal } from "@/app/_lib/ui";
 import { roleMeta } from "@/lib/roles";
 import {
   RoleGlyph, Burst, CrownIcon, BatIcon, JesterIcon, MoonIcon, SunIcon,
-  SkullIcon, CrossIcon, CrystalIcon, CrosshairIcon, BallotIcon,
+  SkullIcon, CrossIcon, CrystalIcon, CrosshairIcon, BallotIcon, ShieldIcon, LockIcon, CheckIcon,
 } from "@/app/_lib/icons";
 import type { ModeratorView, RoleConfig, Game, RoundEvent } from "@/lib/types";
 
@@ -63,7 +63,10 @@ export default function ModeratorPage() {
         <TopBar code={code} inGame={inGame} />
         <header className="mb-5 flex items-center justify-between">
           <h1 className="font-display title-glow text-2xl font-black">🕹️ Moderatör</h1>
-          <StatusBadge status={game.status} />
+          <div className="flex items-center gap-2">
+            <StatusBadge status={game.status} />
+            <AutoCloseHelp />
+          </div>
         </header>
 
         <motion.div key={game.status} initial={{ opacity: 0, y: 14 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
@@ -76,6 +79,39 @@ export default function ModeratorPage() {
         <LogPanel game={game} />
       </div>
     </CodeContext.Provider>
+  );
+}
+
+/* Sağ üstteki "?" — basınca odaların otomatik kapanma kuralını gösterir. */
+function AutoCloseHelp() {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="iconbtn"
+        aria-label="Oda otomatik kapanma bilgisi"
+        aria-expanded={open}
+      >
+        <span className="text-base font-bold leading-none">?</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} aria-hidden />
+          <motion.div
+            initial={{ opacity: 0, y: -6, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 22 }}
+            className="absolute right-0 z-50 mt-2 w-64 rounded-xl border p-3 text-left"
+            style={{ borderColor: "rgba(168,85,247,0.4)", background: "rgba(18,12,32,0.98)", boxShadow: "0 16px 44px -14px rgba(0,0,0,0.7)" }}
+          >
+            <p className="text-xs leading-snug text-[var(--muted)]">
+              🕐 Odalar, <b className="text-[var(--ink)]">1 saat</b> boyunca kimse katılmaz veya oyun başlamazsa otomatik kapanır.
+            </p>
+          </motion.div>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -110,10 +146,13 @@ function Lobby({ view, code }: { view: ModeratorView; code: string }) {
     <div className="space-y-5">
       {/* Oda kodu kartı */}
       <motion.div initial={{ scale: 0.96, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} className="panel p-5 text-center" style={{ borderColor: "rgba(168,85,247,0.4)" }}>
+        <RoomNameEditor game={game} />
         <p className="text-xs uppercase tracking-widest text-[var(--faint)]">Oda Kodu</p>
         <p className="code-chip mt-1 text-5xl font-black" style={{ color: "var(--violet)" }}>{code}</p>
         <p className="mt-2 text-xs text-[var(--muted)]">Bu kodu arkadaşlarına ver — ana sayfadan <b>“Oyuna Katıl”</b> deyip girsinler.</p>
       </motion.div>
+
+      <RoomSettings game={game} />
 
       <Section title="Oyun Modu">
         <div className="grid grid-cols-2 gap-2">
@@ -127,6 +166,9 @@ function Lobby({ view, code }: { view: ModeratorView; code: string }) {
           {draft.map((r, i) => (
             <LobbyRoleRow key={r.key} r={r} i={i} update={update} />
           ))}
+          {/* Ayraç — sayaçlı rollerden, aç/kapa toggle'lı rollere geçiş */}
+          <div className="my-1.5 h-px bg-[var(--panel-line)]" />
+          <LoversSwitch enabled={game.loversEnabled} />
         </div>
         <div className="mt-3 flex items-center justify-between text-sm">
           <span className={totalSpecial > game.players.length ? "text-[var(--blood)]" : "text-[var(--muted)]"}>
@@ -166,6 +208,88 @@ function Lobby({ view, code }: { view: ModeratorView; code: string }) {
   );
 }
 
+/* Oda adı düzenleyici — oda kodu kartının üstünde. Değer bir kez yerel state'e
+   alınır (canlı yoklama yazarken üstüne binmez); blur/Enter ile kaydedilir. */
+function RoomNameEditor({ game }: { game: Game }) {
+  const act = useAct();
+  const [name, setName] = useState(game.name ?? "");
+  const [saved, setSaved] = useState(false);
+
+  async function save() {
+    await act("setRoomName", { name: name.trim() });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 1200);
+  }
+
+  return (
+    <div className="mb-4">
+      <label className="mb-1 block text-[10px] uppercase tracking-widest text-[var(--faint)]">Oda Adı · düzenlenebilir</label>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => e.key === "Enter" && e.currentTarget.blur()}
+        maxLength={40}
+        placeholder="Oda adı"
+        aria-label="Oda adı"
+        className="input font-display text-center text-xl font-bold"
+      />
+      {saved && <p className="mt-1 text-[10px] text-[var(--emerald)]">Kaydedildi ✓</p>}
+    </div>
+  );
+}
+
+/* Oda ayarları — moderatör (isteğe bağlı) katılım şifresini düzenler.
+   Girdi değeri bir kez yerel state'e alınır; canlı yoklama yazarken üzerine binmez. */
+function RoomSettings({ game }: { game: Game }) {
+  const act = useAct();
+  const [pw, setPw] = useState(game.password ?? "");
+  const [pwSaved, setPwSaved] = useState(false);
+  const hasPw = !!game.password;
+
+  async function savePw() {
+    await act("setRoomPassword", { password: pw.trim() });
+    setPwSaved(true);
+    setTimeout(() => setPwSaved(false), 1400);
+  }
+  async function clearPw() {
+    setPw("");
+    await act("setRoomPassword", { password: "" });
+  }
+
+  return (
+    <Section title="Katılım Şifresi">
+      <div className="mb-2 flex items-center justify-between">
+        <label className="text-xs uppercase tracking-wider text-[var(--faint)]">Şifre</label>
+        <span
+          className="badge inline-flex items-center gap-1"
+          style={{ background: hasPw ? "rgba(245,158,11,0.16)" : "rgba(148,163,184,0.16)", color: hasPw ? "#fcd34d" : "#94a3b8" }}
+        >
+          <LockIcon size={12} /> {hasPw ? "Şifreli" : "Şifresiz"}
+        </span>
+      </div>
+      <div className="mt-1.5 flex gap-2">
+        <input
+          value={pw}
+          onChange={(e) => setPw(e.target.value)}
+          placeholder="Şifre belirle (boş = şifresiz)"
+          maxLength={40}
+          className="input flex-1"
+        />
+        <button onClick={savePw} className="btn btn-ghost shrink-0 px-3">
+          {pwSaved ? <CheckIcon size={16} /> : "Uygula"}
+        </button>
+      </div>
+      {hasPw && (
+        <button onClick={clearPw} className="mt-2 text-xs text-[var(--faint)] hover:text-[var(--blood)]">Şifreyi kaldır</button>
+      )}
+      <p className="mt-2 text-[11px] leading-snug text-[var(--faint)]">
+        Varsayılan olarak oda şifresizdir. Şifre koyarsan oyuncular yalnızca doğru şifreyle katılabilir.
+      </p>
+    </Section>
+  );
+}
+
 /* Lobide tek rol satırı. Uzun açıklamalar varsayılan olarak 2 satıra kırpılır;
    "Detay" ile tam metin açılır (kartlar aynı boyda kalır). */
 function LobbyRoleRow({ r, i, update }: { r: RoleConfig; i: number; update: (i: number, patch: Partial<RoleConfig>) => void }) {
@@ -191,6 +315,8 @@ function LobbyRoleRow({ r, i, update }: { r: RoleConfig; i: number; update: (i: 
           <span className="font-semibold">{r.name}</span>
           {r.special === "soytari" ? (
             <span className="badge" style={{ background: "rgba(236,72,153,0.16)", color: "#f9a8d4" }}>Tarafsız</span>
+          ) : r.special === "survivor" ? (
+            <span className="badge" style={{ background: "rgba(45,212,191,0.16)", color: "#5eead4" }}>Tarafsız</span>
           ) : (
             <span className="badge" style={{ background: evil ? "rgba(239,68,68,0.16)" : "rgba(52,211,153,0.14)", color: evil ? "#fca5a5" : "#6ee7b7" }}>{evil ? "Vampir" : "Köy"}</span>
           )}
@@ -269,6 +395,15 @@ function InProgress({ view }: { view: ModeratorView }) {
         >
           {game.winner === "vampir" ? "🧛 Vampirler kazandı" : game.winner === "soytari" ? "🃏 Soytarı kazandı" : "🏡 Köy kazandı"} — oyunu bitirebilirsin.
         </motion.div>
+      )}
+
+      {game.lovers && (
+        <div className="panel-tight border p-3 text-center text-sm" style={{ borderColor: "rgba(236,72,153,0.4)", background: "rgba(236,72,153,0.06)" }}>
+          <span style={{ color: "#f9a8d4" }}>💘 Âşıklar: </span>
+          <b>{game.players.find((p) => p.id === game.lovers![0])?.name ?? "?"}</b>
+          {" & "}
+          <b>{game.players.find((p) => p.id === game.lovers![1])?.name ?? "?"}</b>
+        </div>
       )}
 
       {game.announcement && <ModAnnouncement game={game} />}
@@ -447,7 +582,7 @@ function PlayerRow({ game, playerId }: { game: Game; playerId: string }) {
         <span style={{ color: meta.accent }}><RoleGlyph role={role} size={18} /></span>{p.name}
       </span>
       <div className="flex items-center gap-3">
-        <span style={{ color: role?.special === "soytari" ? "#f9a8d4" : evil ? "#fca5a5" : "#6ee7b7" }}>{role?.name ?? "—"}</span>
+        <span style={{ color: role?.special === "soytari" ? "#f9a8d4" : role?.special === "survivor" ? "#5eead4" : evil ? "#fca5a5" : "#6ee7b7" }}>{role?.name ?? "—"}</span>
         <button onClick={() => act("toggleKill", { targetId: p.id })} className="rounded-lg bg-[rgba(255,255,255,0.06)] px-2 py-1 text-xs hover:bg-[rgba(255,255,255,0.12)]">{p.alive ? "Öldür" : "Dirilt"}</button>
       </div>
     </div>
@@ -513,45 +648,47 @@ function Ended({ view }: { view: ModeratorView }) {
 function CloseRoomButton() {
   const act = useAct();
   const router = useRouter();
-  const [confirm, setConfirm] = useState(false);
+  const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
-  if (!confirm) {
-    return (
-      <button onClick={() => setConfirm(true)} className="btn btn-ghost w-full text-[var(--blood)]">
+  return (
+    <>
+      <button onClick={() => setOpen(true)} className="btn btn-blood w-full">
         🔒 Odayı Kapat
       </button>
-    );
-  }
-  return (
-    <div className="panel p-3">
-      <p className="mb-2 text-center text-sm">Oda tamamen kapatılsın mı? Tüm oyuncular çıkarılır ve kod geçersiz olur.</p>
-      <div className="flex gap-2">
-        <button
-          onClick={async () => {
-            setBusy(true);
-            await act("closeRoom");
-            router.push("/");
-          }}
-          disabled={busy}
-          className="btn btn-blood flex-1"
-        >
-          {busy ? "Kapatılıyor…" : "Evet, kapat"}
-        </button>
-        <button onClick={() => setConfirm(false)} className="btn btn-ghost flex-1">Vazgeç</button>
-      </div>
-    </div>
+      <ConfirmModal
+        open={open}
+        icon="🔒"
+        title="Oda kapatılsın mı?"
+        body="Tüm oyuncular çıkarılır ve kod geçersiz olur. Bu geri alınamaz."
+        confirmLabel="Evet, kapat"
+        busy={busy}
+        onConfirm={async () => {
+          setBusy(true);
+          await act("closeRoom");
+          router.push("/");
+        }}
+        onCancel={() => setOpen(false)}
+      />
+    </>
   );
 }
 
 function ResetButton() {
   const act = useAct();
-  const [confirm, setConfirm] = useState(false);
-  if (!confirm) return <button onClick={() => setConfirm(true)} className="btn btn-ghost text-[var(--blood)]">🗑️</button>;
+  const [open, setOpen] = useState(false);
   return (
-    <div className="flex gap-1">
-      <button onClick={() => { act("reset"); setConfirm(false); }} className="btn btn-blood px-3 text-sm">Emin misin?</button>
-      <button onClick={() => setConfirm(false)} className="btn btn-ghost px-3 text-sm">Vazgeç</button>
-    </div>
+    <>
+      <button onClick={() => setOpen(true)} className="btn btn-ghost text-[var(--blood)]" aria-label="Oyunu sıfırla">🗑️</button>
+      <ConfirmModal
+        open={open}
+        icon="🗑️"
+        title="Oyun sıfırlansın mı?"
+        body="Bu elin rolleri, ölümleri ve ilerlemesi silinir; oda lobiye döner."
+        confirmLabel="Evet, sıfırla"
+        onConfirm={() => { act("reset"); setOpen(false); }}
+        onCancel={() => setOpen(false)}
+      />
+    </>
   );
 }
 
@@ -613,6 +750,15 @@ function RoundCard({ r }: { r: RoundEvent }) {
               label="Medyum okudu"
               value={r.mediumTarget}
               strong={r.mediumResult === "vampir" ? "Vampir çıktı" : "Masum"}
+            />
+          )}
+          {r.survivorShielded && (
+            <ReportLine
+              icon={<ShieldIcon size={14} />}
+              color="#2dd4bf"
+              label="Survivor"
+              value="kalkanını açtı"
+              strong="saldırıyı savuşturdu!"
             />
           )}
         </div>
@@ -678,6 +824,47 @@ function ModeButton({ active, onClick, label, desc }: { active: boolean; onClick
       <div className="font-semibold">{label}</div>
       <div className="mt-0.5 text-[11px] text-[var(--faint)]">{desc}</div>
     </button>
+  );
+}
+
+// Âşıklar rolü — rol satırı görünümünde, sayaç yerine aç/kapa toggle'ı.
+function LoversSwitch({ enabled }: { enabled: boolean }) {
+  const act = useAct();
+  const accent = "#ec4899";
+  return (
+    <div
+      className={`panel-tight flex items-start gap-3 border p-3 transition ${enabled ? "" : "opacity-60"}`}
+      style={{ borderColor: enabled ? `${accent}44` : "var(--panel-line)", background: "rgba(255,255,255,0.03)" }}
+    >
+      <div
+        className="mt-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-xl text-2xl"
+        style={{ background: `${accent}22`, border: `1px solid ${accent}44` }}
+      >
+        💘
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="font-semibold">Âşıklar</span>
+          <span className="badge" style={{ background: `${accent}22`, color: "#f9a8d4" }}>Çift</span>
+        </div>
+        <p className="mt-0.5 text-[11px] leading-tight text-[var(--faint)]">
+          Açıksa oyun başında rastgele 2 oyuncu âşık olur; biri ölürse diğeri de kahrından ölür. Tarafsız roller âşık olmaz.
+        </p>
+      </div>
+      <button
+        role="switch"
+        aria-checked={enabled}
+        onClick={() => act("setLovers", { enabled: !enabled })}
+        className="relative mt-1.5 h-7 w-12 shrink-0 rounded-full transition-colors"
+        style={{ background: enabled ? accent : "rgba(255,255,255,0.15)" }}
+        aria-label="Âşıklar kuralı"
+      >
+        <span
+          className="absolute top-1 h-5 w-5 rounded-full bg-white transition-all"
+          style={{ left: enabled ? "1.55rem" : "0.25rem" }}
+        />
+      </button>
+    </div>
   );
 }
 

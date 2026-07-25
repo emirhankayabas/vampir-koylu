@@ -12,12 +12,54 @@ import type {
   Player,
   RoundEvent,
   RoundDeath,
+  RoomSummary,
 } from "@/lib/types";
 import { NIGHT_ORDER } from "@/lib/roles";
 
 // Bir oyun odasının benzersiz 6 haneli kodu. Birden fazla oda aynı anda oynanabilir.
 const CODE_MIN = 100000;
 const CODE_SPAN = 900000;
+
+// Survivor'ın oyun boyunca kullanabileceği toplam gece kalkanı sayısı.
+export const SURVIVOR_SHIELDS = 2;
+
+// Oda ömrü: son gerçek işlemden (saveGame) sonra bu süre boyunca hiçbir hamle
+// olmazsa oda otomatik kapanır (silinir). Yalnızca izleme/poll (GET) zamanı
+// tazelemez; katılım, oy, gece aksiyonu gibi işlemler tazeler. Böylece biri
+// katılmaz ya da oyun başlamazsa lobi 1 saat sonra kendiliğinden kapanır.
+export const ROOM_TTL_MS = 60 * 60 * 1000; // 1 saat
+
+/** Oda son işlemden bu yana çok mu bekledi (kapanmalı mı)? */
+function isStale(updatedAt: number | undefined): boolean {
+  return !!updatedAt && Date.now() - updatedAt > ROOM_TTL_MS;
+}
+
+// Yeni odalara verilen rastgele isimler — herkesin bildiği ünlü film/dizi/kültür
+// göndermeleri (basit kelimeler değil, tatlı ve tanıdık şeyler).
+// Yeni odalara verilen rastgele isimler — yabancı + yerli karışık, 1-3 kelime,
+// görünce güldüren esprili göndermeler.
+const ROOM_NAMES = [
+  // Temaya uygun (vampir/köy) espriler
+  "Vejetaryen Vampir", "Sarımsak Alerjisi", "Kansız Vampir", "Uykusuz Köylü",
+  "Köyün Delisi", "Güneş Kremi Lazım", "Dişçi Korkusu", "Sinsi Köylü",
+  // Yabancı pop-kültür (komik twist)
+  "Vader Baba", "Yoda Düzgün Konuş", "Gollum Diyette", "Voldemort Nezle",
+  "Hulk Kızgın", "Titanik Batmaz", "Rambo Emekli", "Matrix Lag Yedi",
+  "John Wick Kızgın", "Thanos Çıtlattı", "Şirinler Grevde", "Ejderha Yumurtladı",
+  // Yerli meme / laflar
+  "Oha Falan Oldum", "Helal Olsun Reis", "Kaçın Kurbağalar", "Vay Be Panpa",
+  "Gaza Gelme", "Yandık Hoca", "Olur Bu İş", "Full Sisli",
+  "Recep İvedik Diyette", "Kurtlar Vadisi Piknik", "Kombi Bozuk", "İnternet Yok",
+  // Kısa & vurucu komik nickler
+  "Gıcık Kedi", "Zıpır Dayı", "Karizma Kral", "Efsane Manyak",
+  "Salak Dahi", "Obur Şövalye", "Pili Bitik", "Kafası Güzel",
+  "Korkak Kahraman", "Şapşal Cadı",
+];
+
+/** Rastgele tanıdık bir oda adı üretir (ör. "Kıymetlim", "Kış Geliyor"). */
+export function randomRoomName(): string {
+  return ROOM_NAMES[Math.floor(Math.random() * ROOM_NAMES.length)];
+}
 
 export function defaultRoles(): RoleConfig[] {
   return [
@@ -29,6 +71,10 @@ export function defaultRoles(): RoleConfig[] {
     // team "koy": köylü gibi görünür (medyum/ölüm duyurusunda masum çıkar) ama kendi kazanma
     // koşulu vardır: gündüz oylamasında astırılırsa tek başına kazanır.
     { key: "soytari", name: "Soytarı", team: "koy", enabled: true, count: 0, builtin: true, special: "soytari" },
+    // Tarafsız Survivor — varsayılan kapalı (count 0). Köylü gibi görünür (medyum/ölüm
+    // duyurusunda masum çıkar) ama takımı yoktur: tek amacı oyun sonunda hayatta olmak.
+    // Gece 2 kez kalkanını açıp o gece kendisine gelen saldırıları savuşturabilir.
+    { key: "survivor", name: "Survivor", team: "koy", enabled: true, count: 0, builtin: true, special: "survivor" },
     { key: "koylu", name: "Köylü", team: "koy", enabled: true, count: 0, builtin: true, fill: true },
   ];
 }
@@ -41,23 +87,30 @@ function freshNight() {
     vampireVotes: {} as Record<string, string>,
     doctorTarget: null,
     mediumTarget: null,
+    survivorShields: [] as string[],
+    survivorDecided: [] as string[],
   };
 }
 
 function freshGame(code: string): Game {
   return {
     _id: code,
+    name: randomRoomName(),
+    password: null,
     status: "lobby",
     mode: "phone",
     assignMode: "random",
     phase: "night",
     dayNumber: 0,
     roles: defaultRoles(),
+    loversEnabled: false,
+    lovers: null,
     players: [],
     vote: { active: false, votes: {} },
     night: freshNight(),
     mediumLog: [],
     doctorSelfUsed: [],
+    survivorShieldsUsed: {},
     announcement: null,
     pendingHunterId: null,
     hangedThisDay: false,
@@ -96,10 +149,22 @@ export async function getGame(code: string): Promise<Game | null> {
   const db = await getDb();
   const game = await db.collection<Game>("state").findOne({ _id: id });
   if (!game) return null;
+  // Bayat oda: son işlemin üzerinden 1 saat geçtiyse odayı kapat (sil) ve yok say.
+  if (isStale(game.updatedAt)) {
+    await db.collection<Game>("state").deleteOne({ _id: id });
+    return null;
+  }
   // Eski kayıtlarla geriye dönük uyum
+  game.name ??= "";
+  game.password ??= null;
+  game.loversEnabled ??= false;
+  game.lovers ??= null;
   game.night ??= freshNight();
+  game.night.survivorShields ??= [];
+  game.night.survivorDecided ??= [];
   game.mediumLog ??= [];
   game.doctorSelfUsed ??= [];
+  game.survivorShieldsUsed ??= {};
   game.announcement ??= null;
   game.hangedThisDay ??= false;
   game.assignMode ??= "random";
@@ -123,12 +188,42 @@ export async function getVersion(code: string): Promise<number> {
   const db = await getDb();
   const doc = await db
     .collection<Game>("state")
-    .findOne({ _id: id }, { projection: { version: 1 } });
-  return doc?.version ?? 0;
+    .findOne({ _id: id }, { projection: { version: 1, updatedAt: 1 } });
+  if (!doc) return 0;
+  // Bayat oda "yok" gibi davranır — istemci "oda kapandı" görür. Silme işini
+  // getGame/listRooms üstlenir (bu yol hafif kalsın diye burada silmiyoruz).
+  if (isStale(doc.updatedAt)) return 0;
+  return doc.version ?? 0;
 }
 
 export function makeFreshGame(code: string): Game {
   return freshGame(code);
+}
+
+/** Tüm odaların özetini döndürür (Mevcut Oyunlar sayfası). Şifreyi ASLA sızdırmaz. */
+export async function listRooms(): Promise<RoomSummary[]> {
+  const db = await getDb();
+  // Önce bayat odaları kapat (1 saattir işlem görmeyenler), sonra kalanları listele.
+  await db.collection<Game>("state").deleteMany({ updatedAt: { $lt: Date.now() - ROOM_TTL_MS } });
+  const docs = await db
+    .collection<Game>("state")
+    .find(
+      {},
+      { projection: { _id: 1, name: 1, status: 1, phase: 1, mode: 1, players: 1, password: 1, updatedAt: 1 } }
+    )
+    .sort({ updatedAt: -1 })
+    .limit(100)
+    .toArray();
+  return docs.map((g) => ({
+    code: g._id,
+    name: g.name ?? "",
+    status: g.status,
+    phase: g.phase,
+    mode: g.mode,
+    playerCount: g.players?.length ?? 0,
+    hasPassword: !!g.password,
+    updatedAt: g.updatedAt ?? 0,
+  }));
 }
 
 /** Odayı tamamen siler (moderatör "Odayı Kapat"). */
@@ -178,8 +273,14 @@ function maskedRoleName(game: Game, roleKey: string | null): string {
   return roleTeam(game, roleKey) === "vampir" ? "Vampir" : "Köylü";
 }
 
-function specialOf(game: Game, p: Player): "avci" | "doktor" | "medyum" | "soytari" | undefined {
+function specialOf(game: Game, p: Player): "avci" | "doktor" | "medyum" | "soytari" | "survivor" | undefined {
   return roleOf(game, p.role)?.special;
+}
+
+/** Bir Survivor'ın kalan kalkan hakkı (oyun boyu SURVIVOR_SHIELDS − harcanan). */
+function survivorShieldsLeft(game: Game, playerId: string): number {
+  const used = game.survivorShieldsUsed?.[playerId] ?? 0;
+  return Math.max(0, SURVIVOR_SHIELDS - used);
 }
 
 function alivePlayers(game: Game): Player[] {
@@ -282,6 +383,51 @@ export function assignRolesFor(game: Game): AssignResult {
   return game.assignMode === "manual" ? assignRolesManual(game) : assignRoles(game);
 }
 
+// --- Âşıklar ---
+
+/**
+ * Âşıklar özelliği açıksa oyun başında rastgele 2 uygun oyuncuyu âşık yapar.
+ * Uygun = tarafsız OLMAYAN herkes (yani KÖY veya VAMPİR etiketli; Soytarı ve
+ * Survivor hariç). Rolleri fark etmez — Âşık Vampir, Âşık Doktor vs. olabilir.
+ * Yeterli aday yoksa (2'den az) âşık oluşmaz.
+ */
+export function assignLovers(game: Game) {
+  game.lovers = null;
+  if (!game.loversEnabled) return;
+  const eligible = game.players.filter((p) => {
+    const sp = roleOf(game, p.role)?.special;
+    return sp !== "soytari" && sp !== "survivor";
+  });
+  if (eligible.length < 2) return;
+  const pair = shuffle(eligible).slice(0, 2);
+  game.lovers = [pair[0].id, pair[1].id];
+  log(game, `Âşıklar belirlendi: ${pair[0].name} 💘 ${pair[1].name}.`);
+}
+
+/** Bir oyuncunun âşık partnerinin id'si (yoksa null). */
+export function loverPartnerId(game: Game, id: string): string | null {
+  if (!game.lovers) return null;
+  const [a, b] = game.lovers;
+  if (id === a) return b;
+  if (id === b) return a;
+  return null;
+}
+
+/**
+ * Bir ölümün ardından âşık partnerini de öldürür ("kahrından"). Partner zaten
+ * ölüyse ya da âşık yoksa bir şey yapmaz. Ölen partneri döndürür (duyuru için).
+ * Ölüm bağı yalnızca tek yönde zincirlenir (iki âşık olduğu için sonsuz döngü yok).
+ */
+export function applyHeartbreak(game: Game, deadId: string): Player | null {
+  const partnerId = loverPartnerId(game, deadId);
+  if (!partnerId) return null;
+  const partner = game.players.find((p) => p.id === partnerId);
+  if (!partner || !partner.alive) return null;
+  partner.alive = false;
+  log(game, `${partner.name} âşığının ardından kahrından öldü.`);
+  return partner;
+}
+
 // --- Gece motoru (telefon modu) ---
 
 /** Bu gece hangi rol gruplarının oynayacağını canlı oyunculara göre hesaplar. */
@@ -291,6 +437,9 @@ export function computeNightOrder(game: Game): NightRole[] {
   if (alive.some((p) => roleTeam(game, p.role) === "vampir")) roles.push("vampir");
   if (alive.some((p) => specialOf(game, p) === "doktor")) roles.push("doktor");
   if (alive.some((p) => specialOf(game, p) === "medyum")) roles.push("medyum");
+  // Survivor yalnızca hâlâ kalkan hakkı varsa geceye katılır.
+  if (alive.some((p) => specialOf(game, p) === "survivor" && survivorShieldsLeft(game, p.id) > 0))
+    roles.push("survivor");
   roles.sort((a, b) => (NIGHT_ORDER[a] ?? 99) - (NIGHT_ORDER[b] ?? 99));
   return roles;
 }
@@ -308,6 +457,8 @@ export function beginNight(game: Game) {
     vampireVotes: {},
     doctorTarget: null,
     mediumTarget: null,
+    survivorShields: [],
+    survivorDecided: [],
   };
   // Hiç aktif rol yoksa (imkânsıza yakın) doğrudan çöz
   if (game.night.order.length === 0) resolveNight(game);
@@ -323,6 +474,17 @@ function groupComplete(game: Game): boolean {
   }
   if (cur === "doktor") return game.night.doctorTarget !== null;
   if (cur === "medyum") return game.night.mediumTarget !== null;
+  if (cur === "survivor") {
+    // Kalkan hakkı olup henüz karar vermemiş (kullan/geç) canlı Survivor kalmasın.
+    // Son kalkanını harcayan da survivorDecided'a girer, dolayısıyla adım kilitlenmez.
+    const pending = alivePlayers(game).filter(
+      (p) =>
+        specialOf(game, p) === "survivor" &&
+        survivorShieldsLeft(game, p.id) > 0 &&
+        !game.night.survivorDecided.includes(p.id)
+    );
+    return pending.length === 0;
+  }
   return true;
 }
 
@@ -351,7 +513,10 @@ function vampireTarget(game: Game): string | null {
 /** Geceyi çözer: ölüm/koruma hesaplanır, sabah duyurusu üretilir. */
 export function resolveNight(game: Game) {
   const target = vampireTarget(game);
-  const saved = !!target && game.night.doctorTarget === target;
+  const savedByDoctor = !!target && game.night.doctorTarget === target;
+  // Kalkanını açan bir Survivor hedeflendiyse saldırı boşa gider.
+  const savedByShield = !!target && game.night.survivorShields.includes(target);
+  const saved = savedByDoctor || savedByShield;
 
   const lines: string[] = [];
   let dead: Announcement["dead"] = null;
@@ -367,14 +532,26 @@ export function resolveNight(game: Game) {
       dead = { name: victim.name, roleName: shown, team: role?.team ?? "koy" };
       deaths.push({ name: victim.name, role: role?.name ?? "?", team: role?.team ?? "koy" });
       log(game, `Gece ${victim.name} öldü (${role?.name ?? "?"}).`);
+      // Âşık öldüyse partneri de kahrından ölür.
+      const hb = applyHeartbreak(game, victim.id);
+      if (hb) {
+        const hbRole = roleOf(game, hb.role);
+        lines.push(`💔 ${hb.name} âşığının ardından dayanamadı.`);
+        lines.push(`Rolü: ${maskedRoleName(game, hb.role)}`);
+        deaths.push({ name: hb.name, role: hbRole?.name ?? "?", team: hbRole?.team ?? "koy" });
+      }
     } else {
       lines.push("Bu gece kimse ölmedi.");
     }
-  } else if (saved) {
+  } else if (savedByDoctor) {
     // İsim verilmez — sadece korumanın gerçekleştiği söylenir
     lines.push("Doktor bu gece bir oyuncuyu korudu.");
     lines.push("Kimse ölmedi.");
     log(game, "Doktor gece bir saldırıyı engelledi.");
+  } else if (savedByShield) {
+    // Survivor gizli kalır — kalkanı açığa vurmadan sessiz bir gece gibi anlatılır.
+    lines.push("Bu gece kimse ölmedi.");
+    log(game, "Survivor kalkanıyla bir saldırıyı savuşturdu.");
   } else {
     lines.push("Bu gece kimse ölmedi.");
     log(game, "Sakin bir geceydi.");
@@ -390,6 +567,7 @@ export function resolveNight(game: Game) {
     vampTarget: target ? playerName(game, target) : null,
     doctorTarget: game.night.doctorTarget ? playerName(game, game.night.doctorTarget) : null,
     saved,
+    survivorShielded: savedByShield,
     mediumTarget: medPlayer ? medPlayer.name : null,
     mediumResult: medPlayer ? roleTeam(game, medPlayer.role) : null,
     deaths,
@@ -422,6 +600,23 @@ export function submitNightAction(
 
   const actor = game.players.find((p) => p.id === playerId);
   if (!actor || !actor.alive) return { ok: false, error: "Bu aksiyonu yapamazsınız." };
+
+  // Survivor kararı hedefsiz olabilir ("geç"), bu yüzden genel hedef kontrolünden önce.
+  if (kind === "survivor") {
+    if (specialOf(game, actor) !== "survivor") return { ok: false, error: "Survivor değilsiniz." };
+    if (game.night.survivorDecided.includes(playerId)) return { ok: false, error: "Bu gece kararını verdin." };
+    // targetId === kendisi → kalkanı aç; aksi halde (boş) bu geceyi es geç.
+    if (targetId === playerId) {
+      if (survivorShieldsLeft(game, playerId) <= 0) return { ok: false, error: "Kalkan hakkın kalmadı." };
+      game.survivorShieldsUsed[playerId] = (game.survivorShieldsUsed[playerId] ?? 0) + 1;
+      if (!game.night.survivorShields.includes(playerId)) game.night.survivorShields.push(playerId);
+      log(game, `${actor.name} (Survivor) kalkanını açtı.`);
+    }
+    game.night.survivorDecided.push(playerId);
+    advanceNight(game);
+    return { ok: true };
+  }
+
   const target = game.players.find((p) => p.id === targetId);
   if (!target || !target.alive) return { ok: false, error: "Geçersiz hedef." };
 
@@ -521,6 +716,20 @@ export function resolveVote(game: Game): { hangedId: string | null } {
   const lines = victim
     ? [`${victim.name} oy çokluğuyla asıldı.`, `Rolü: ${shown}`]
     : ["Asma gerçekleşmedi."];
+  const roundDeaths: RoundDeath[] = victim
+    ? [{ name: victim.name, role: role?.name ?? "?", team: role?.team ?? "koy" }]
+    : [];
+
+  // Âşık asıldıysa partneri de kahrından ölür.
+  if (victim) {
+    const hb = applyHeartbreak(game, victim.id);
+    if (hb) {
+      const hbRole = roleOf(game, hb.role);
+      lines.push(`💔 ${hb.name} âşığının ardından dayanamadı.`);
+      lines.push(`Rolü: ${maskedRoleName(game, hb.role)}`);
+      roundDeaths.push({ name: hb.name, role: hbRole?.name ?? "?", team: hbRole?.team ?? "koy" });
+    }
+  }
 
   game.announcement = {
     kind: "hang",
@@ -532,12 +741,7 @@ export function resolveVote(game: Game): { hangedId: string | null } {
   if (victim) {
     log(game, `${victim.name} asıldı (${role?.name ?? "?"}).`);
     game.hangedThisDay = true;
-    recordRound(game, {
-      day: game.dayNumber,
-      kind: "hang",
-      at: Date.now(),
-      deaths: [{ name: victim.name, role: role?.name ?? "?", team: role?.team ?? "koy" }],
-    });
+    recordRound(game, { day: game.dayNumber, kind: "hang", at: Date.now(), deaths: roundDeaths });
   }
 
   // Avcı asıldıysa atış hakkı kazanır (yalnızca oyla asılınca).
@@ -560,20 +764,25 @@ export function hunterShoot(game: Game, targetId: string | null): AssignResult {
     if (victim) {
       const role = roleOf(game, victim.role);
       const shown = maskedRoleName(game, victim.role);
+      const lines = [`Avcı ${hunterName}, son nefesinde ${victim.name}'i vurdu.`, `Rolü: ${shown}`];
+      const roundDeaths: RoundDeath[] = [{ name: victim.name, role: role?.name ?? "?", team: role?.team ?? "koy" }];
+      // Vurulan kişi âşıksa partneri de kahrından ölür.
+      const hb = applyHeartbreak(game, victim.id);
+      if (hb) {
+        const hbRole = roleOf(game, hb.role);
+        lines.push(`💔 ${hb.name} âşığının ardından dayanamadı.`);
+        lines.push(`Rolü: ${maskedRoleName(game, hb.role)}`);
+        roundDeaths.push({ name: hb.name, role: hbRole?.name ?? "?", team: hbRole?.team ?? "koy" });
+      }
       game.announcement = {
         kind: "hunter",
         title: "Avcının Kurşunu",
-        lines: [`Avcı ${hunterName}, son nefesinde ${victim.name}'i vurdu.`, `Rolü: ${shown}`],
+        lines,
         dead: { name: victim.name, roleName: shown, team: role?.team ?? "koy" },
         at: Date.now(),
       };
       log(game, `Avcı ${victim.name}'i vurdu (${role?.name ?? "?"}).`);
-      recordRound(game, {
-        day: game.dayNumber,
-        kind: "hunter",
-        at: Date.now(),
-        deaths: [{ name: victim.name, role: role?.name ?? "?", team: role?.team ?? "koy" }],
-      });
+      recordRound(game, { day: game.dayNumber, kind: "hunter", at: Date.now(), deaths: roundDeaths });
     }
   } else {
     game.announcement = {
@@ -627,6 +836,7 @@ function nightSummary(game: Game): NightSummary | null {
     vampir: "🧛 Vampirler avını seçiyor",
     doktor: "🩺 Doktor birini koruyor",
     medyum: "🔮 Medyum bir ruhu okuyor",
+    survivor: "🛡️ Survivor kalkanına karar veriyor",
   };
   let waiting: string[] = [];
   if (cur === "vampir") {
@@ -637,6 +847,15 @@ function nightSummary(game: Game): NightSummary | null {
     waiting = alivePlayers(game).filter((p) => specialOf(game, p) === "doktor").map((p) => p.name);
   } else if (cur === "medyum" && !game.night.mediumTarget) {
     waiting = alivePlayers(game).filter((p) => specialOf(game, p) === "medyum").map((p) => p.name);
+  } else if (cur === "survivor") {
+    waiting = alivePlayers(game)
+      .filter(
+        (p) =>
+          specialOf(game, p) === "survivor" &&
+          survivorShieldsLeft(game, p.id) > 0 &&
+          !game.night.survivorDecided.includes(p.id)
+      )
+      .map((p) => p.name);
   }
   return { role: cur, label: cur ? labels[cur] : "Gece çözülüyor", waiting };
 }
@@ -720,6 +939,17 @@ function turnFor(game: Game, self: Player): TurnInfo | null {
       myPick: game.night.mediumTarget,
     };
   }
+  if (cur === "survivor" && role.special === "survivor") {
+    // Kararını verdiyse tekrar sorma — diğer Survivor'lar beklenirken uyur.
+    if (game.night.survivorDecided.includes(self.id)) return null;
+    const left = survivorShieldsLeft(game, self.id);
+    return {
+      kind: "survivor",
+      candidates: [], // hedef listesi yok; ekran "kullan / geç" düğmeleri gösterir
+      myPick: null,
+      note: `Kalan kalkan: ${left}/${SURVIVOR_SHIELDS}`,
+    };
+  }
   return null;
 }
 
@@ -741,6 +971,15 @@ export function participantView(game: Game, playerId: string | null): Participan
           .map((r) => ({ targetName: r.targetName, team: r.team, day: r.day }))
       : [];
 
+  // Âşık isim(ler)i: oyuncu âşıksa yalnızca partnerinin ADI (rolü değil).
+  const loverPartner = self ? loverPartnerId(game, self.id) : null;
+  const loverName = loverPartner ? playerName(game, loverPartner) : null;
+  // Oyun bitince âşık çift herkese açılır.
+  const loverPair =
+    revealed && game.lovers
+      ? { a: playerName(game, game.lovers[0]), b: playerName(game, game.lovers[1]) }
+      : null;
+
   // Oylama sırasında her adayın aldığı oy sayısı (herkes canlı görür)
   const voteCounts = new Map<string, number>();
   for (const target of Object.values(game.vote.votes)) {
@@ -752,6 +991,8 @@ export function participantView(game: Game, playerId: string | null): Participan
     role: "participant",
     forPlayerId: playerId ?? null,
     exists: !!self,
+    roomName: game.name ?? "",
+    hasPassword: !!game.password,
     status: game.status,
     mode: game.mode,
     phase: game.phase,
@@ -764,6 +1005,9 @@ export function participantView(game: Game, playerId: string | null): Participan
           alive: self.alive,
           teammates,
           readings,
+          survivorShieldsLeft:
+            roleOf(game, self.role)?.special === "survivor" ? survivorShieldsLeft(game, self.id) : null,
+          loverName,
         }
       : null,
     players: game.players.map((p) => ({ id: p.id, name: p.name, alive: p.alive })),
@@ -778,6 +1022,7 @@ export function participantView(game: Game, playerId: string | null): Participan
     nightActive: game.mode === "phone" && game.phase === "night" && game.night.active,
     announcement: game.announcement,
     winner: game.winner,
+    loverPair,
     reveal: revealed
       ? game.players.map((p) => ({
           id: p.id,
