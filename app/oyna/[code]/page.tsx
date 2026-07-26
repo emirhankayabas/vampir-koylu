@@ -4,13 +4,14 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
-import { useStream, postAction, usePlayerId, savePlayerId, clearPlayerId } from "@/app/_lib/client";
-import { SceneBackdrop, TopBar, Spinner } from "@/app/_lib/ui";
-import { roleMeta } from "@/lib/roles";
+import { useStream, postAction, usePlayerId, savePlayerId, clearPlayerId, forgetRoom } from "@/app/_lib/client";
+import { SceneBackdrop, TopBar, Spinner, winnerTheme } from "@/app/_lib/ui";
+import { roleMeta, SURVIVOR_SHIELDS } from "@/lib/roles";
 import {
-  RoleGlyph, Burst, CrownIcon, BatIcon, JesterIcon, MoonIcon, SunIcon, SkullIcon,
-  BallotIcon, CheckIcon, CrossIcon, CrystalIcon, CrosshairIcon, ShieldIcon, LockIcon,
+  RoleGlyph, Burst, MoonIcon, SunIcon, SkullIcon,
+  BallotIcon, CheckIcon, CrossIcon, CrystalIcon, CrosshairIcon, ShieldIcon, LockIcon, BatIcon,
 } from "@/app/_lib/icons";
+import type { ParticipantView, TurnInfo, Team, Announcement } from "@/lib/types";
 
 const TURN_ICON: Record<TurnInfo["kind"], (p: { size?: number; strokeWidth?: number }) => React.ReactElement> = {
   vampir: (p) => <BatIcon {...p} />,
@@ -19,7 +20,6 @@ const TURN_ICON: Record<TurnInfo["kind"], (p: { size?: number; strokeWidth?: num
   hunter: (p) => <CrosshairIcon {...p} />,
   survivor: (p) => <ShieldIcon {...p} />,
 };
-import type { ParticipantView, TurnInfo, Team, Announcement } from "@/lib/types";
 
 function buzz(ms = 12) {
   try {
@@ -51,6 +51,12 @@ export default function OynaPage() {
   useEffect(() => {
     if (viewForMe && playerId && !view!.exists) clearPlayerId(code);
   }, [viewForMe, view, playerId, code]);
+
+  // Oda kapandı (moderatör kapattı ya da 1 saat işlem görmedi): yerel kaydı
+  // sil ki ana sayfada ölü bir "devam eden oda" kartı kalmasın.
+  useEffect(() => {
+    if (notFound && code) forgetRoom(code);
+  }, [notFound, code]);
 
   async function join() {
     const trimmed = name.trim();
@@ -366,12 +372,14 @@ function RoleCard({ self }: { self: NonNullable<ParticipantView["self"]> }) {
           <p className="mt-1 text-sm text-[var(--muted)]">Oyun bitene kadar <b className="text-[var(--ink)]">hayatta kal</b>. Kazanan taraf hangisiyse onunla birlikte kazanırsın. Gece <b className="text-[var(--ink)]">kalkanını</b> açarak o gece sana gelen saldırıları savuşturabilirsin — ama asılmaya karşı işe yaramaz.</p>
           {typeof self.survivorShieldsLeft === "number" && (
             <div className="mt-2 flex items-center gap-1.5">
-              {Array.from({ length: 2 }).map((_, i) => (
+              {Array.from({ length: SURVIVOR_SHIELDS }).map((_, i) => (
                 <span key={i} style={{ color: i < self.survivorShieldsLeft! ? "#2dd4bf" : "rgba(255,255,255,0.18)" }}>
                   <ShieldIcon size={18} />
                 </span>
               ))}
-              <span className="ml-1 text-xs text-[var(--muted)]">{self.survivorShieldsLeft}/2 kalkan kaldı</span>
+              <span className="ml-1 text-xs text-[var(--muted)]">
+                {self.survivorShieldsLeft}/{SURVIVOR_SHIELDS} kalkan kaldı
+              </span>
             </div>
           )}
         </div>
@@ -682,19 +690,7 @@ function AnnouncementCard({ a }: { a: Announcement }) {
 
 /* ------------------------- Bitiş ekranı ------------------------- */
 function EndScreen({ view }: { view: ParticipantView }) {
-  const jester = view.winner === "soytari";
-  const evil = view.winner === "vampir";
-  const decided = jester || evil || view.winner === "koy";
-  const accent = jester ? "#ec4899" : evil ? "#ef4444" : "#34d399";
-  const textColor = jester ? "#f9a8d4" : evil ? "#fca5a5" : "#6ee7b7";
-  const palette = jester
-    ? ["#ec4899", "#f472b6", "#a855f7", "#f59e0b", "#ffffff"]
-    : evil
-      ? ["#ef4444", "#b91c1c", "#a855f7", "#fca5a5", "#f59e0b"]
-      : ["#34d399", "#6ee7b7", "#22d3ee", "#f59e0b", "#ffffff"];
-  const WinIcon = jester ? JesterIcon : evil ? BatIcon : CrownIcon;
-  const title = jester ? "Soytarı Kazandı" : evil ? "Vampirler Kazandı" : view.winner === "koy" ? "Köy Kazandı" : "Oyun Bitti";
-  const subtitle = jester ? "Herkesi kandırıp darağacına çıktı." : evil ? "Karanlık köyü ele geçirdi." : view.winner === "koy" ? "Köy şafağa kavuştu." : "El sona erdi.";
+  const { decided, accent, textColor, iconColor, palette, Icon: WinIcon, title, subtitle } = winnerTheme(view.winner);
 
   // Bu oyuncu kazandı mı? Soytarı yalnızca kendisi astırılınca kazanır; köy
   // kazanınca soytarı kaybeder.
@@ -705,9 +701,9 @@ function EndScreen({ view }: { view: ParticipantView }) {
   const iWon = decided
     ? iAmSurvivor
       ? !!view.self?.alive
-      : jester
+      : view.winner === "soytari"
         ? iAmJester
-        : evil
+        : view.winner === "vampir"
           ? myTeam === "vampir"
           : myTeam === "koy" && !iAmJester
     : null;
@@ -736,7 +732,7 @@ function EndScreen({ view }: { view: ParticipantView }) {
             animate={{ scale: [1, 1.18, 1] }}
             transition={{ duration: 2.4, repeat: Infinity }}
           />
-          <span style={{ color: jester ? "#f9a8d4" : evil ? "#fca5a5" : "#fde68a" }}>
+          <span style={{ color: iconColor }}>
             <WinIcon size={62} strokeWidth={1.6} />
           </span>
         </motion.div>

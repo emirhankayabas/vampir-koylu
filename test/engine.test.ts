@@ -2,9 +2,9 @@
    Saf (DB'siz) fonksiyonları gerçek senaryolarla sürer. `npm test` */
 import {
   makeFreshGame, defaultRoles, assignRolesFor, assignLovers, loverPartnerId,
-  beginNight, resolveNight, submitNightAction, resolveVote, hunterShoot,
+  beginNight, resolveNight, submitNightAction, resolveVote, hangPlayer, hunterShoot,
   checkWinner, finalizeWinner, computeNightOrder, participantView, roleTeam,
-  SURVIVOR_SHIELDS, randomRoomName,
+  leaveGame, SURVIVOR_SHIELDS, randomRoomName,
 } from "@/lib/game";
 import type { Game } from "@/lib/types";
 
@@ -16,8 +16,8 @@ function check(name: string, cond: unknown, extra?: unknown) {
 }
 function section(t: string) { console.log("\n" + t); }
 
-// Belirli rollerle in-progress bir oyun kurar.
-function mkGame(defs: { name: string; role: string }[], opts?: Partial<Game>): Game {
+// Belirli rollerle in-progress bir oyun kurar. role null olabilir (lobi senaryosu).
+function mkGame(defs: { name: string; role: string | null }[], opts?: Partial<Game>): Game {
   const g = makeFreshGame("100000");
   g.roles = defaultRoles();
   g.mode = "phone";
@@ -112,12 +112,14 @@ section("5) Doktor kendini bir kez korur (tam akış)");
 
 section("6) Survivor kalkanı");
 {
+  // Sıra iddiasını gerçekten ölçebilmek için dört gece rolü de masada olmalı.
   const g = mkGame([
-    { name: "V1", role: "vampir" }, { name: "V2", role: "vampir" }, { name: "S", role: "survivor" }, { name: "K1", role: "koylu" },
+    { name: "V1", role: "vampir" }, { name: "D", role: "doktor" }, { name: "M", role: "medyum" },
+    { name: "S", role: "survivor" }, { name: "K1", role: "koylu" },
   ]);
   const order = computeNightOrder(g);
   check("gece sırası survivor içerir", order.includes("survivor"));
-  check("sıra: vampir<doktor<medyum<survivor", order[order.length - 1] === "survivor");
+  check("sıra: vampir<doktor<medyum<survivor", order.join(">") === "vampir>doktor>medyum>survivor", order);
   // Survivor kalkan açar, vampirler survivor'ı hedefler → survivor yaşar
   nightResolveWith(g, idByName(g, "S"), { shields: [idByName(g, "S")] });
   check("kalkanlı survivor yaşar", alive(g, "S"));
@@ -274,6 +276,64 @@ section("19) Tam el — köy kazanır (gece + asma zinciri)");
   resolveVote(g);
   finalizeWinner(g);
   check("vampir asıldı → köy kazandı", g.winner === "koy" && g.status === "ended");
+}
+
+section("20) Elle asma (sözlü mod) oylamayla aynı kuralları uygular");
+{
+  // Soytarı: moderatör astığında da tek başına kazanır
+  const gs = mkGame([{ name: "SOY", role: "soytari" }, { name: "V", role: "vampir" }, { name: "K", role: "koylu" }, { name: "K2", role: "koylu" }]);
+  hangPlayer(gs, idByName(gs, "SOY"));
+  check("elle asma: soytarı kazandı", gs.winner === "soytari" && gs.status === "ended");
+
+  // Avcı: elle asılınca da atış hakkı doğar
+  const ga = mkGame([{ name: "AV", role: "avci" }, { name: "V", role: "vampir" }, { name: "K", role: "koylu" }, { name: "K2", role: "koylu" }]);
+  hangPlayer(ga, idByName(ga, "AV"));
+  check("elle asma: avcı atış bekliyor", ga.pendingHunterId === idByName(ga, "AV"));
+  check("elle asma: gündüz asma işaretlendi", ga.hangedThisDay === true);
+  check("elle asma: rol maskeli duyurulur", ga.announcement?.dead?.roleName === "Köylü");
+
+  // Âşık bağı elle asmada da işler
+  const gl = mkGame([{ name: "A", role: "koylu" }, { name: "B", role: "koylu" }, { name: "V", role: "vampir" }, { name: "V2", role: "vampir" }],
+    { loversEnabled: true });
+  gl.lovers = [idByName(gl, "A"), idByName(gl, "B")];
+  hangPlayer(gl, idByName(gl, "A"));
+  check("elle asma: âşık partneri de öldü", !alive(gl, "B"));
+
+  // Zaten ölü hedef asılamaz
+  const gd = mkGame([{ name: "X", role: "koylu" }, { name: "V", role: "vampir" }, { name: "K", role: "koylu" }, { name: "K2", role: "koylu" }]);
+  gd.players.find((p) => p.name === "X")!.alive = false;
+  check("ölü oyuncu tekrar asılamaz", hangPlayer(gd, idByName(gd, "X")) === null);
+}
+
+section("21) Biten oyunda kazanan yeniden hesaplanmaz");
+{
+  const g = mkGame([{ name: "V", role: "vampir" }, { name: "K1", role: "koylu" }, { name: "K2", role: "koylu" }]);
+  g.vote = { active: true, votes: { a: idByName(g, "V"), b: idByName(g, "V") } };
+  resolveVote(g);
+  check("vampir asıldı → köy kazandı", g.winner === "koy" && g.status === "ended");
+  // Moderatör bitmiş oyunda vampiri diriltirse ilan edilen sonuç değişmemeli
+  g.players.find((p) => p.name === "V")!.alive = true;
+  finalizeWinner(g);
+  check("dirilme ilan edilmiş sonucu bozmaz", g.winner === "koy" && g.status === "ended");
+}
+
+section("22) Odadan ayrılma");
+{
+  // Lobide gerçekten listeden düşer — yoksa "hayalet oyuncu" rol alır.
+  const g = mkGame([{ name: "A", role: null }, { name: "B", role: null }], { status: "lobby" });
+  const res = leaveGame(g, idByName(g, "A"));
+  check("lobide ayrılma ok", res.ok, res);
+  check("oyuncu listeden silindi", !g.players.some((p) => p.name === "A"));
+  check("diğer oyuncu kalır", g.players.length === 1);
+
+  // Süren elde silinmez: rol dengesi ve kazanma hesabı bozulmasın.
+  const gp = mkGame([{ name: "V", role: "vampir" }, { name: "K1", role: "koylu" }, { name: "K2", role: "koylu" }]);
+  const resP = leaveGame(gp, idByName(gp, "V"));
+  check("süren elde ayrılma reddedilir", !resP.ok, resP);
+  check("oyuncu listede kalır", gp.players.length === 3);
+
+  // Bilinmeyen kimlik hata değil (istemci yerel kaydını silsin yeter).
+  check("bilinmeyen oyuncu sorunsuz", leaveGame(gp, "yok-boyle-biri").ok);
 }
 
 // ---------------------------------------------------------------------------

@@ -3,8 +3,50 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "motion/react";
-import { ArrowLeftIcon, CopyIcon, CheckIcon } from "@/app/_lib/icons";
-import type { Phase } from "@/lib/types";
+import { ArrowLeftIcon, CopyIcon, CheckIcon, CrownIcon, BatIcon, JesterIcon } from "@/app/_lib/icons";
+import type { Phase, Winner } from "@/lib/types";
+
+/* ============================================================
+   Kazanma ekranı teması — oyuncu ve moderatör ekranları aynı
+   renk/başlık/ikon takımını paylaşsın diye tek yerde.
+   ============================================================ */
+
+export interface WinnerTheme {
+  decided: boolean; // sonuç belli mi (yoksa "Oyun Bitti")
+  accent: string; // hale/kenarlık rengi
+  textColor: string; // başlık rengi
+  iconColor: string;
+  palette: string[]; // konfeti renkleri
+  Icon: (p: { size?: number; strokeWidth?: number }) => React.ReactElement;
+  title: string;
+  subtitle: string;
+}
+
+export function winnerTheme(winner: Winner | null): WinnerTheme {
+  const jester = winner === "soytari";
+  const evil = winner === "vampir";
+  const village = winner === "koy";
+  return {
+    decided: jester || evil || village,
+    accent: jester ? "#ec4899" : evil ? "#ef4444" : "#34d399",
+    textColor: jester ? "#f9a8d4" : evil ? "#fca5a5" : "#6ee7b7",
+    iconColor: jester ? "#f9a8d4" : evil ? "#fca5a5" : "#fde68a",
+    palette: jester
+      ? ["#ec4899", "#f472b6", "#a855f7", "#f59e0b", "#ffffff"]
+      : evil
+        ? ["#ef4444", "#b91c1c", "#a855f7", "#fca5a5", "#f59e0b"]
+        : ["#34d399", "#6ee7b7", "#22d3ee", "#f59e0b", "#ffffff"],
+    Icon: jester ? JesterIcon : evil ? BatIcon : CrownIcon,
+    title: jester ? "Soytarı Kazandı" : evil ? "Vampirler Kazandı" : village ? "Köy Kazandı" : "Oyun Bitti",
+    subtitle: jester
+      ? "Herkesi kandırıp darağacına çıktı."
+      : evil
+        ? "Karanlık köyü ele geçirdi."
+        : village
+          ? "Köy şafağa kavuştu."
+          : "El sona erdi.",
+  };
+}
 
 /* ============================================================
    Modal sistemi — ortada açılan, arka planı karartan diyalog.

@@ -39,6 +39,17 @@
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Dokunmatikte çift dokunuş gecikmesini/istemsiz zoom'u kaldırır — ama
+   parmakla yakınlaştırma açık kalır (bkz. layout.tsx viewport notu). */
+button,
+a,
+input,
+select,
+label,
+[role="switch"] {
+  touch-action: manipulation;
+}
+
 html {
   height: 100%;
 }
@@ -382,22 +393,6 @@ body > * {
   50% { box-shadow: 0 0 34px 4px rgba(168, 85, 247, 0.35); }
 }
 .pulse-glow { animation: pulseGlow 2.4s ease-in-out infinite; }
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-.shimmer {
-  background: linear-gradient(100deg, transparent 40%, rgba(255,255,255,0.25) 50%, transparent 60%);
-  background-size: 200% 100%;
-  animation: shimmer 2.6s linear infinite;
-}
-
-@keyframes riseIn {
-  from { opacity: 0; transform: translateY(14px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-.rise-in { animation: riseIn 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 
 @keyframes moonPulse {
   0%, 100% { filter: drop-shadow(0 0 14px rgba(34,211,238,0.5)); }

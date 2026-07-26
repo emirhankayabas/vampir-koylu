@@ -13,6 +13,10 @@ export type AssignMode = "random" | "manual";
 // Gece sırasında aktif olan rol grupları
 export type NightRole = "vampir" | "doktor" | "medyum" | "survivor";
 
+// Özel yetenek / tarafsızlık işaretçisi. Tek kaynaktan yönetilir; rol meta
+// verisi (lib/roles.ts) ve motor bu anahtarlara göre davranır.
+export type SpecialKey = "avci" | "doktor" | "medyum" | "soytari" | "survivor";
+
 export interface RoleConfig {
   key: string; // benzersiz anahtar, örn "vampir"
   name: string; // görünen ad
@@ -21,7 +25,7 @@ export interface RoleConfig {
   count: number; // kaç kişiye dağıtılacak (fill=true olan hariç)
   fill?: boolean; // geri kalan herkes bu role atanır (Köylü)
   builtin?: boolean; // varsayılan rol mü (silinemez)
-  special?: "avci" | "doktor" | "medyum" | "soytari" | "survivor"; // özel yetenek / tarafsız işaretçisi
+  special?: SpecialKey; // özel yetenek / tarafsız işaretçisi
 }
 
 export interface Player {
@@ -128,6 +132,15 @@ export interface RoomSummary {
   updatedAt: number;
 }
 
+// Kayıtlı oturum: istemcinin localStorage'ında duran (oda + kimlik) kaydının
+// sunucudaki güncel karşılığı. Ana sayfadaki "devam eden odalarım" kartı bunu
+// kullanır. Oda kapanmışsa yanıtta hiç yer almaz → istemci kaydı siler.
+export interface SessionSummary extends RoomSummary {
+  exists: boolean; // bu playerId hâlâ odanın oyuncu listesinde mi
+  playerName: string | null; // odadaki adı (yoksa null)
+  alive: boolean; // oyunda hâlâ hayatta mı (bilgi amaçlı)
+}
+
 // SSE ile istemciye gönderilen projeksiyonlar
 
 // Moderatöre gece ilerlemesinin özeti
@@ -202,7 +215,7 @@ export interface ParticipantView {
         roleName: string | null;
         roleKey: string | null;
         team: Team | null;
-        special?: "avci" | "doktor" | "medyum" | "soytari" | "survivor";
+        special?: SpecialKey;
         alive: boolean;
       }[]
     | null;

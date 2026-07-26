@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import { postAction, savePlayerId } from "@/app/_lib/client";
+import { postAction, savePlayerId, saveModeratorRoom } from "@/app/_lib/client";
+import { ActiveSessions } from "@/app/_lib/sessions";
 import { Crest, RoleGlyph, PlayIcon, KeyIcon, ArrowLeftIcon, HomeIcon } from "@/app/_lib/icons";
 import { metaByKey } from "@/lib/roles";
 import type { RoleConfig } from "@/lib/types";
@@ -31,6 +32,7 @@ export default function Home() {
     setError(null);
     const res = await postAction("createRoom");
     if (res.ok && res.code) {
+      saveModeratorRoom(res.code); // sekme kapansa da panele geri dönebilsin
       router.push(`/moderator/${res.code}`);
     } else {
       setBusy(null);
@@ -126,6 +128,7 @@ export default function Home() {
             transition={{ delay: 0.25 }}
             className="grid gap-3"
           >
+            <ActiveSessions />
             <button onClick={createRoom} disabled={busy !== null} className="btn btn-blood btn-lg">
               <PlayIcon size={22} />
               {busy === "create" ? "Oda kuruluyor…" : "Oyun Oluştur"}

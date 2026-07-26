@@ -1,9 +1,14 @@
 // Rol meta verisi — hem sunucu hem istemci kullanır.
 // İkon, renk ve gece sırası gibi görsel/oyun bilgilerini merkezî tutar.
 
-import type { RoleConfig } from "@/lib/types";
+import type { RoleConfig, SpecialKey } from "@/lib/types";
 
-export type SpecialKey = "avci" | "doktor" | "medyum" | "soytari" | "survivor";
+export type { SpecialKey };
+
+// Survivor'ın oyun boyunca kullanabileceği toplam gece kalkanı sayısı.
+// Burada durur (mongodb'a bağlı lib/game.ts'de değil) ki istemci bileşenleri de
+// aynı sabiti okuyabilsin.
+export const SURVIVOR_SHIELDS = 2;
 
 export interface RoleMeta {
   icon: string; // emoji ikon

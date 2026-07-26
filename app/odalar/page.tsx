@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import { postAction } from "@/app/_lib/client";
+import { postAction, saveModeratorRoom } from "@/app/_lib/client";
 import { Spinner } from "@/app/_lib/ui";
 import { ArrowLeftIcon, LockIcon, PlayIcon, RefreshIcon, MoonIcon, SunIcon } from "@/app/_lib/icons";
 import type { RoomSummary } from "@/lib/types";
@@ -28,8 +28,13 @@ export default function OdalarPage() {
   useEffect(() => {
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    // Uçuşta istek varken ikinci bir döngü başlamasın (sekme değişimlerinde
+    // yoklama sayısı katlanmasın).
+    let inFlight = false;
 
     const poll = async () => {
+      if (stopped || inFlight) return;
+      inFlight = true;
       try {
         const res = await fetch("/api/rooms", { cache: "no-store" });
         const data = await res.json();
@@ -44,12 +49,16 @@ export default function OdalarPage() {
       } catch {
         if (!stopped) setError(true);
       } finally {
+        inFlight = false;
+        if (timer) clearTimeout(timer);
         if (!stopped) timer = setTimeout(poll, POLL_MS);
       }
     };
 
     poll();
-    const onVisible = () => document.visibilityState === "visible" && !stopped && poll();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") poll();
+    };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       stopped = true;
@@ -61,8 +70,10 @@ export default function OdalarPage() {
   async function createRoom() {
     setCreating(true);
     const res = await postAction("createRoom");
-    if (res.ok && res.code) router.push(`/moderator/${res.code}`);
-    else setCreating(false);
+    if (res.ok && res.code) {
+      saveModeratorRoom(res.code); // sekme kapansa da panele geri dönebilsin
+      router.push(`/moderator/${res.code}`);
+    } else setCreating(false);
   }
 
   return (
@@ -117,9 +128,6 @@ export default function OdalarPage() {
         <PlayIcon size={20} />
         {creating ? "Oda kuruluyor…" : "Yeni Oyun Oluştur"}
       </button>
-      <p className="mt-3 text-center text-xs text-[var(--faint)]">
-        🕐 Bir odada 1 saat boyunca hiçbir işlem olmazsa oda otomatik kapanır.
-      </p>
     </div>
   );
 }

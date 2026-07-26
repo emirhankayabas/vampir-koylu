@@ -1,0 +1,13 @@
+{
+  // Testler ana tsconfig'in "exclude" listesinde (Next.js derlemesine girmesinler
+  // diye). Bu yüzden tip kontrolleri ayrı bir yapılandırmayla yapılır:
+  //   npm run typecheck
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "incremental": false,
+    "types": ["node"]
+  },
+  "include": ["test/**/*.ts", "lib/**/*.ts"],
+  "exclude": ["node_modules"]
+}

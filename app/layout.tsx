@@ -24,8 +24,10 @@ export const viewport: Viewport = {
   themeColor: "#07060d",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
-  userScalable: false,
+  // maximumScale/userScalable BİLEREK ayarlanmıyor: yakınlaştırmayı kapatmak
+  // küçük etiketleri (10-11px rozetler) okuyamayan kullanıcıları dışarıda
+  // bırakır ve iOS bunu zaten yok sayar. Çift dokunuşla istemsiz zoom'u
+  // engellemek için CSS'te `touch-action: manipulation` kullanıyoruz.
 };
 
 export default function RootLayout({

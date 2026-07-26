@@ -13,15 +13,17 @@ import type {
   RoundEvent,
   RoundDeath,
   RoomSummary,
+  SessionSummary,
+  SpecialKey,
 } from "@/lib/types";
-import { NIGHT_ORDER } from "@/lib/roles";
+import { NIGHT_ORDER, SURVIVOR_SHIELDS } from "@/lib/roles";
+
+// Sabit rol meta verisiyle birlikte durur; motor kullanıcıları için buradan da açılır.
+export { SURVIVOR_SHIELDS };
 
 // Bir oyun odasının benzersiz 6 haneli kodu. Birden fazla oda aynı anda oynanabilir.
 const CODE_MIN = 100000;
 const CODE_SPAN = 900000;
-
-// Survivor'ın oyun boyunca kullanabileceği toplam gece kalkanı sayısı.
-export const SURVIVOR_SHIELDS = 2;
 
 // Oda ömrü: son gerçek işlemden (saveGame) sonra bu süre boyunca hiçbir hamle
 // olmazsa oda otomatik kapanır (silinir). Yalnızca izleme/poll (GET) zamanı
@@ -172,12 +174,35 @@ export async function getGame(code: string): Promise<Game | null> {
   return game;
 }
 
+/**
+ * Aynı odaya aynı anda yazılmaya çalışıldığında atılır (örn. iki vampir aynı
+ * saniyede hedef seçti). Çağıran taraf odayı yeniden okuyup aksiyonu tekrar
+ * uygular; böylece hiçbir hamle sessizce kaybolmaz.
+ */
+export class VersionConflictError extends Error {
+  constructor() {
+    super("Oda durumu değişti, tekrar deneyin.");
+    this.name = "VersionConflictError";
+  }
+}
+
+/**
+ * Oyunu kaydeder. İyimser kilitleme: yazma yalnızca odanın sürümü okunduğu
+ * andakiyle aynıysa geçer. Aksi halde araya başka bir hamle girmiştir ve
+ * VersionConflictError atılır (üstteki katman tazeleyip tekrar dener).
+ */
 export async function saveGame(game: Game): Promise<Game> {
   const db = await getDb();
-  const col = db.collection<Game>("state");
-  game.version += 1;
+  const expected = game.version;
+  game.version = expected + 1;
   game.updatedAt = Date.now();
-  await col.replaceOne({ _id: game._id }, game, { upsert: true });
+  const res = await db
+    .collection<Game>("state")
+    .replaceOne({ _id: game._id, version: expected }, game);
+  if (res.matchedCount === 0) {
+    game.version = expected; // yazılmadı — nesneyi okunduğu hâline geri al
+    throw new VersionConflictError();
+  }
   return game;
 }
 
@@ -224,6 +249,72 @@ export async function listRooms(): Promise<RoomSummary[]> {
     hasPassword: !!g.password,
     updatedAt: g.updatedAt ?? 0,
   }));
+}
+
+// Ana sayfada aynı anda gösterilebilecek en fazla kayıtlı oturum.
+const MAX_SESSIONS = 8;
+
+/**
+ * İstemcinin hatırladığı odaların güncel durumunu döndürür ("devam eden
+ * odalarım" kartı). Kapanmış ya da bayatlamış odalar yanıtta YER ALMAZ —
+ * istemci böylece o kayıtları siler ve oyuncu otomatik olarak odadan düşer.
+ * Şifre asla sızdırılmaz, yalnızca var/yok bilgisi döner.
+ */
+export async function listSessions(
+  refs: { code: string; playerId?: string | null }[]
+): Promise<SessionSummary[]> {
+  // Kodları normalize et, tekilleştir ve sınırla.
+  const wanted = new Map<string, string | null>();
+  for (const ref of refs) {
+    const id = normalizeCode(ref.code);
+    if (id.length !== 6 || wanted.has(id)) continue;
+    wanted.set(id, ref.playerId ?? null);
+    if (wanted.size >= MAX_SESSIONS) break;
+  }
+  if (wanted.size === 0) return [];
+
+  const db = await getDb();
+  const docs = await db
+    .collection<Game>("state")
+    .find(
+      { _id: { $in: [...wanted.keys()] } },
+      { projection: { _id: 1, name: 1, status: 1, phase: 1, mode: 1, players: 1, password: 1, updatedAt: 1 } }
+    )
+    .sort({ updatedAt: -1 })
+    .toArray();
+
+  return docs
+    .filter((g) => !isStale(g.updatedAt)) // bayat oda kapanmış sayılır
+    .map((g) => {
+      const playerId = wanted.get(g._id) ?? null;
+      const me = playerId ? g.players?.find((p) => p.id === playerId) : undefined;
+      return {
+        code: g._id,
+        name: g.name ?? "",
+        status: g.status,
+        phase: g.phase,
+        mode: g.mode,
+        playerCount: g.players?.length ?? 0,
+        hasPassword: !!g.password,
+        updatedAt: g.updatedAt ?? 0,
+        exists: !!me,
+        playerName: me?.name ?? null,
+        alive: me?.alive ?? false,
+      };
+    });
+}
+
+/** Bir oyuncuyu odadan çıkarır. Yalnızca lobide izinlidir — süren bir elde
+ *  oyuncuyu listeden silmek rol dengesini ve kazanma hesabını bozar. */
+export function leaveGame(game: Game, playerId: string): AssignResult {
+  const p = game.players.find((x) => x.id === playerId);
+  if (!p) return { ok: true }; // zaten yok — istemci kaydını silsin
+  if (game.status !== "lobby") {
+    return { ok: false, error: "Oyun sürerken odadan çıkılamaz." };
+  }
+  game.players = game.players.filter((x) => x.id !== playerId);
+  log(game, `${p.name} odadan ayrıldı.`);
+  return { ok: true };
 }
 
 /** Odayı tamamen siler (moderatör "Odayı Kapat"). */
@@ -273,7 +364,7 @@ function maskedRoleName(game: Game, roleKey: string | null): string {
   return roleTeam(game, roleKey) === "vampir" ? "Vampir" : "Köylü";
 }
 
-function specialOf(game: Game, p: Player): "avci" | "doktor" | "medyum" | "soytari" | "survivor" | undefined {
+function specialOf(game: Game, p: Player): SpecialKey | undefined {
   return roleOf(game, p.role)?.special;
 }
 
@@ -291,7 +382,8 @@ function playerName(game: Game, id: string): string {
   return game.players.find((p) => p.id === id)?.name ?? "?";
 }
 
-function killPlayer(game: Game, targetId: string): Player | null {
+/** Bir oyuncuyu öldürür. Zaten ölüyse ya da yoksa null döner (çift ölüm yok). */
+export function killPlayer(game: Game, targetId: string): Player | null {
   const p = game.players.find((x) => x.id === targetId);
   if (!p || !p.alive) return null;
   p.alive = false;
@@ -300,10 +392,12 @@ function killPlayer(game: Game, targetId: string): Player | null {
 
 // --- Rol dağıtımı ---
 
-export interface AssignResult {
-  ok: boolean;
-  error?: string;
-}
+/**
+ * Motor işlemlerinin sonucu. Ayrıştırılmış birleşim: başarısızsa `error` ALANI
+ * ZORUNLU. Böylece "ok:false ama mesaj yok" durumu derleme zamanında imkânsız
+ * olur ve çağıran taraf `res.error!` gibi zorlamalara ihtiyaç duymaz.
+ */
+export type AssignResult = { ok: true } | { ok: false; error: string };
 
 export function assignRoles(game: Game): AssignResult {
   const active = game.roles.filter((r) => r.enabled);
@@ -660,6 +754,77 @@ export function skipNightStep(game: Game) {
 
 // --- Gündüz / oylama ---
 
+/**
+ * Bir oyuncuyu asar. Oylama sonucu (telefon modu) ile moderatörün elle asması
+ * (sözlü mod) aynı kuralları paylaşsın diye tek yerde toplanmıştır: duyuru,
+ * tur raporu, Soytarı zaferi, âşık bağı ve avcının atış hakkı.
+ * Hedef zaten ölüyse hiçbir şey yapmaz ve null döner.
+ */
+export function hangPlayer(game: Game, targetId: string, byVote = false): Player | null {
+  const victim = killPlayer(game, targetId);
+  if (!victim) return null;
+
+  game.vote = { active: false, votes: {} };
+  game.hangedThisDay = true;
+  const role = roleOf(game, victim.role);
+  const at = Date.now();
+
+  // Soytarı astırıldıysa: tek başına kazanır ve oyun anında biter.
+  if (role?.special === "soytari") {
+    game.winner = "soytari";
+    game.status = "ended";
+    game.night.active = false;
+    game.announcement = {
+      kind: "hang",
+      title: "Soytarının Oyunu",
+      lines: [`${victim.name} asıldı… ama o bir Soytarıydı!`, "Soytarı kazandı 🃏"],
+      dead: { name: victim.name, roleName: "Soytarı", team: role.team },
+      at,
+    };
+    log(game, `${victim.name} (Soytarı) astırıldı — Soytarı kazandı.`);
+    recordRound(game, {
+      day: game.dayNumber,
+      kind: "hang",
+      at,
+      deaths: [{ name: victim.name, role: "Soytarı", team: role.team }],
+    });
+    return victim;
+  }
+
+  const shown = maskedRoleName(game, victim.role);
+  const lines = [byVote ? `${victim.name} oy çokluğuyla asıldı.` : `${victim.name} asıldı.`, `Rolü: ${shown}`];
+  const deaths: RoundDeath[] = [{ name: victim.name, role: role?.name ?? "?", team: role?.team ?? "koy" }];
+
+  // Âşık asıldıysa partneri de kahrından ölür.
+  const hb = applyHeartbreak(game, victim.id);
+  if (hb) {
+    const hbRole = roleOf(game, hb.role);
+    lines.push(`💔 ${hb.name} âşığının ardından dayanamadı.`);
+    lines.push(`Rolü: ${maskedRoleName(game, hb.role)}`);
+    deaths.push({ name: hb.name, role: hbRole?.name ?? "?", team: hbRole?.team ?? "koy" });
+  }
+
+  game.announcement = {
+    kind: "hang",
+    title: "İnfaz",
+    lines,
+    dead: { name: victim.name, roleName: shown, team: role?.team ?? "koy" },
+    at,
+  };
+  log(game, `${victim.name} asıldı (${role?.name ?? "?"}).`);
+  recordRound(game, { day: game.dayNumber, kind: "hang", at, deaths });
+
+  // Avcı asıldıysa atış hakkı kazanır (yalnızca asılınca).
+  // Rolü yine "Köylü" görünür; avcı olduğu ancak ateş edince ortaya çıkar.
+  if (role?.special === "avci") {
+    game.pendingHunterId = victim.id;
+    log(game, `${victim.name} (Avcı) atış hakkı kazandı.`);
+  }
+
+  finalizeWinner(game);
+  return victim;
+}
+
 /** Oylamayı çözer: en çok oyu alan asılır (eşitlik → asma yok). */
 export function resolveVote(game: Game): { hangedId: string | null } {
   const counts = new Map<string, number>();
@@ -686,72 +851,18 @@ export function resolveVote(game: Game): { hangedId: string | null } {
     return { hangedId: null };
   }
 
-  const victim = killPlayer(game, hangedId);
-  const role = victim ? roleOf(game, victim.role) : null;
-
-  // Soytarı astırıldıysa: tek başına kazanır ve oyun anında biter.
-  if (victim && role?.special === "soytari") {
-    game.winner = "soytari";
-    game.status = "ended";
-    game.night.active = false;
+  // Hedef arada ölmüşse (moderatör müdahalesi vb.) asma gerçekleşmez.
+  if (!hangPlayer(game, hangedId, true)) {
     game.announcement = {
       kind: "hang",
-      title: "Soytarının Oyunu",
-      lines: [`${victim.name} asıldı… ama o bir Soytarıydı!`, "Soytarı kazandı 🃏"],
-      dead: { name: victim.name, roleName: "Soytarı", team: role.team },
+      title: "Oylama",
+      lines: ["Asma gerçekleşmedi."],
+      dead: null,
       at: Date.now(),
     };
-    log(game, `${victim.name} (Soytarı) astırıldı — Soytarı kazandı.`);
-    game.hangedThisDay = true;
-    recordRound(game, {
-      day: game.dayNumber,
-      kind: "hang",
-      at: Date.now(),
-      deaths: [{ name: victim.name, role: "Soytarı", team: role.team }],
-    });
-    return { hangedId };
+    finalizeWinner(game);
+    return { hangedId: null };
   }
-
-  const shown = victim ? maskedRoleName(game, victim.role) : "";
-  const lines = victim
-    ? [`${victim.name} oy çokluğuyla asıldı.`, `Rolü: ${shown}`]
-    : ["Asma gerçekleşmedi."];
-  const roundDeaths: RoundDeath[] = victim
-    ? [{ name: victim.name, role: role?.name ?? "?", team: role?.team ?? "koy" }]
-    : [];
-
-  // Âşık asıldıysa partneri de kahrından ölür.
-  if (victim) {
-    const hb = applyHeartbreak(game, victim.id);
-    if (hb) {
-      const hbRole = roleOf(game, hb.role);
-      lines.push(`💔 ${hb.name} âşığının ardından dayanamadı.`);
-      lines.push(`Rolü: ${maskedRoleName(game, hb.role)}`);
-      roundDeaths.push({ name: hb.name, role: hbRole?.name ?? "?", team: hbRole?.team ?? "koy" });
-    }
-  }
-
-  game.announcement = {
-    kind: "hang",
-    title: "İnfaz",
-    lines,
-    dead: victim ? { name: victim.name, roleName: shown, team: role?.team ?? "koy" } : null,
-    at: Date.now(),
-  };
-  if (victim) {
-    log(game, `${victim.name} asıldı (${role?.name ?? "?"}).`);
-    game.hangedThisDay = true;
-    recordRound(game, { day: game.dayNumber, kind: "hang", at: Date.now(), deaths: roundDeaths });
-  }
-
-  // Avcı asıldıysa atış hakkı kazanır (yalnızca oyla asılınca).
-  // Rolü yine "Köylü" görünür; avcı olduğu ancak ateş edince ortaya çıkar.
-  if (victim && role?.special === "avci") {
-    game.pendingHunterId = victim.id;
-    log(game, `${victim.name} (Avcı) atış hakkı kazandı.`);
-  }
-
-  finalizeWinner(game);
   return { hangedId };
 }
 
@@ -818,8 +929,12 @@ export function checkWinner(game: Game): Team | null {
 export function finalizeWinner(game: Game) {
   // Soytarı astırılıp kazandıysa sonuç kilitlidir — köy/vampir hesabıyla ezilemez.
   if (game.winner === "soytari") return;
+  // Yalnızca süren oyunda hesap yapılır. Biten oyunda (ör. moderatör birini
+  // diriltince) ilan edilmiş kazanan yeniden hesaplanıp değişmemeli; lobide de
+  // roller dağıtılmadığı için anlamlı bir sonuç yoktur.
+  if (game.status !== "in_progress") return;
   game.winner = checkWinner(game);
-  if (game.winner && !game.pendingHunterId && game.status === "in_progress") {
+  if (game.winner && !game.pendingHunterId) {
     game.status = "ended";
     game.vote = { active: false, votes: {} };
     game.night.active = false;

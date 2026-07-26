@@ -152,14 +152,6 @@ export function BallotIcon(p: IconProps) {
   );
 }
 
-export function DropIcon(p: IconProps) {
-  return (
-    <Svg {...p}>
-      <path d="M12 3.2c0 0 6 6.4 6 10.3A6 6 0 0 1 6 13.5C6 9.6 12 3.2 12 3.2Z" />
-    </Svg>
-  );
-}
-
 export function ShieldIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -228,22 +220,6 @@ export function CheckIcon(p: IconProps) {
   );
 }
 
-export function SparkIcon(p: IconProps) {
-  return (
-    <Svg {...p}>
-      <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" fill="currentColor" stroke="none" />
-    </Svg>
-  );
-}
-
-export function StopIcon(p: IconProps) {
-  return (
-    <Svg {...p}>
-      <rect x="6" y="6" width="12" height="12" rx="2.5" fill="currentColor" stroke="none" />
-    </Svg>
-  );
-}
-
 export function RefreshIcon(p: IconProps) {
   return (
     <Svg {...p}>
@@ -301,6 +277,14 @@ export function RoleGlyph({
    Merkezden dışa doğru saçılan renkli parçacıklar.
    ============================================================ */
 
+/* Deterministik sözde-rastgele (0..1). Math.random render'ı safsız yapardı
+   (React kuralı: bileşenler idempotent olmalı) ve her yeniden çizimde konfeti
+   yerinden zıplardı. Aynı tohum her zaman aynı değeri verir. */
+function noise(seed: number): number {
+  const x = Math.sin(seed * 12.9898 + 78.233) * 43758.5453;
+  return x - Math.floor(x);
+}
+
 export function Burst({
   palette,
   count = 30,
@@ -309,19 +293,21 @@ export function Burst({
   count?: number;
 }) {
   const bits = useMemo(() => {
-    const rnd = (min: number, max: number) => min + Math.random() * (max - min);
+    // i: parçacık sırası, k: o parçacığın kaçıncı özelliği — çakışmayan tohumlar.
+    const rnd = (i: number, k: number, min: number, max: number) =>
+      min + noise(i * 17 + k) * (max - min);
     return Array.from({ length: count }, (_, i) => {
-      const angle = (i / count) * Math.PI * 2 + rnd(-0.25, 0.25);
-      const dist = rnd(90, 190);
+      const angle = (i / count) * Math.PI * 2 + rnd(i, 1, -0.25, 0.25);
+      const dist = rnd(i, 2, 90, 190);
       return {
         id: i,
         x: Math.cos(angle) * dist,
-        y: Math.sin(angle) * dist - rnd(0, 40),
+        y: Math.sin(angle) * dist - rnd(i, 3, 0, 40),
         color: palette[i % palette.length],
-        size: rnd(6, 12),
-        delay: rnd(0, 0.25),
-        rot: rnd(-220, 220),
-        round: Math.random() > 0.5,
+        size: rnd(i, 4, 6, 12),
+        delay: rnd(i, 5, 0, 0.25),
+        rot: rnd(i, 6, -220, 220),
+        round: rnd(i, 7, 0, 1) > 0.5,
       };
     });
   }, [count, palette]);

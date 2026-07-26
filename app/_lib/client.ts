@@ -5,7 +5,10 @@ import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 // --- Oyuncu kimliği (localStorage, oda koduna göre) ---
 // useSyncExternalStore, localStorage gibi dış bir kaynağı okumanın React'çe
 // doğru yolu: efekt içinde setState çağırmadan, SSR ile uyumlu çalışır.
-const idKey = (code: string) => `vk_pid_${code}`;
+const ID_PREFIX = "vk_pid_"; // oyuncu kimliği: vk_pid_<kod> = playerId
+const MOD_PREFIX = "vk_mod_"; // moderatörlük işareti: vk_mod_<kod> = "1"
+const idKey = (code: string) => `${ID_PREFIX}${code}`;
+const modKey = (code: string) => `${MOD_PREFIX}${code}`;
 const idListeners = new Set<() => void>();
 
 export function usePlayerId(code: string | null): string | null {
@@ -29,6 +32,54 @@ export function savePlayerId(code: string, id: string) {
 }
 export function clearPlayerId(code: string) {
   localStorage.removeItem(idKey(code));
+  idListeners.forEach((l) => l());
+}
+
+/* --- Kayıtlı oturumlar ("devam eden odalarım") ---
+   Tarayıcı bir odaya girildiğini localStorage'da tutar. Sekme kapansa, sayfa
+   yenilense ya da bağlantı kopsa bile kullanıcı ana sayfadan odaya dönebilir.
+   Sunucu tarafında hiçbir şey silinmez: oyuncu zaten oyunun içindedir. */
+
+export interface LocalSession {
+  code: string;
+  playerId: string | null; // oyuncu olarak katıldıysa kimliği
+  moderator: boolean; // bu odayı ben mi kurdum
+}
+
+/** Bu tarayıcıda kayıtlı tüm oda oturumlarını okur (SSR'da boş döner). */
+export function listLocalSessions(): LocalSession[] {
+  if (typeof localStorage === "undefined") return [];
+  const byCode = new Map<string, LocalSession>();
+  const take = (code: string) =>
+    byCode.get(code) ?? { code, playerId: null, moderator: false };
+
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key) continue;
+    if (key.startsWith(ID_PREFIX)) {
+      const code = key.slice(ID_PREFIX.length);
+      if (!/^\d{6}$/.test(code)) continue;
+      byCode.set(code, { ...take(code), playerId: localStorage.getItem(key) });
+    } else if (key.startsWith(MOD_PREFIX)) {
+      const code = key.slice(MOD_PREFIX.length);
+      if (!/^\d{6}$/.test(code)) continue;
+      byCode.set(code, { ...take(code), moderator: true });
+    }
+  }
+  return [...byCode.values()];
+}
+
+/** Bu odanın moderatörü olduğumuzu işaretler (oda kurulduğunda / panel açılınca). */
+export function saveModeratorRoom(code: string) {
+  localStorage.setItem(modKey(code), "1");
+  idListeners.forEach((l) => l());
+}
+
+/** Odayla ilgili tüm yerel kayıtları siler — oda kapandığında ya da
+ *  kullanıcı "Odadan çık" dediğinde çağrılır. */
+export function forgetRoom(code: string) {
+  localStorage.removeItem(idKey(code));
+  localStorage.removeItem(modKey(code));
   idListeners.forEach((l) => l());
 }
 
@@ -59,6 +110,9 @@ export function useStream<T>(url: string | null): T | null {
     let controller: AbortController | null = null;
     // En son görülen sürüm — sunucuya "bunu biliyorum" demek için.
     let version = -1;
+    // Uçuşta bir istek var mı. Aynı anda iki döngünün başlamasını engeller
+    // (aksi halde her sekme değişiminde istek sayısı katlanırdı).
+    let inFlight = false;
 
     const schedule = (ms: number) => {
       if (timer) clearTimeout(timer);
@@ -66,7 +120,9 @@ export function useStream<T>(url: string | null): T | null {
     };
 
     const poll = async () => {
-      if (stopped) return;
+      // Uçuşta istek varsa çık: onun `finally`'si sıradakini zaten planlayacak.
+      if (stopped || inFlight) return;
+      inFlight = true;
       // Not: Sekme arka plandayken tarayıcı zamanlayıcıları zaten kısar
       // (mobilde ~1/dk), kilit ekranında dondurur — ayrıca bir "hidden"
       // kısıtı koymuyoruz ki döngü hiçbir koşulda sessizce ölmesin.
@@ -88,6 +144,7 @@ export function useStream<T>(url: string | null): T | null {
       } catch {
         /* ağ hatası / iptal — sonraki turda tekrar dener */
       } finally {
+        inFlight = false;
         schedule(POLL_MS);
       }
     };

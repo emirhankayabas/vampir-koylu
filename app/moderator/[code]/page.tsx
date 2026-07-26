@@ -1,17 +1,17 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
-import { useStream, postAction } from "@/app/_lib/client";
-import { SceneBackdrop, TopBar, Spinner, ConfirmModal } from "@/app/_lib/ui";
+import { useStream, postAction, saveModeratorRoom, forgetRoom } from "@/app/_lib/client";
+import { SceneBackdrop, TopBar, Spinner, ConfirmModal, winnerTheme } from "@/app/_lib/ui";
 import { roleMeta } from "@/lib/roles";
 import {
-  RoleGlyph, Burst, CrownIcon, BatIcon, JesterIcon, MoonIcon, SunIcon,
+  RoleGlyph, Burst, BatIcon, MoonIcon, SunIcon,
   SkullIcon, CrossIcon, CrystalIcon, CrosshairIcon, BallotIcon, ShieldIcon, LockIcon, CheckIcon,
 } from "@/app/_lib/icons";
-import type { ModeratorView, RoleConfig, Game, RoundEvent } from "@/lib/types";
+import type { ModeratorView, RoleConfig, Game, Player, RoundEvent } from "@/lib/types";
 
 /* Oda kodunu ağaç boyunca taşımak için context + bağlı aksiyon yardımcı. */
 const CodeContext = createContext<string>("");
@@ -26,6 +26,17 @@ export default function ModeratorPage() {
   const params = useParams();
   const code = Array.isArray(params.code) ? params.code[0] : (params.code as string) ?? "";
   const raw = useStream<Raw>(code ? `/api/stream?role=moderator&code=${code}` : null);
+
+  const notFound = !!raw && "notfound" in raw;
+  const roomOk = !!raw && !("notfound" in raw) && !("error" in raw);
+  // Paneli açtığın odayı hatırla (sekme kapanırsa ana sayfadan geri dönersin);
+  // oda kapandıysa kaydı sil. Bağımlılıklar boolean olduğu için yalnızca
+  // durum değiştiğinde çalışır, her yoklamada değil.
+  useEffect(() => {
+    if (!code) return;
+    if (notFound) forgetRoom(code);
+    else if (roomOk) saveModeratorRoom(code);
+  }, [code, notFound, roomOk]);
 
   if (!raw) return <FullScreen><Spinner label="Bağlanıyor…" /></FullScreen>;
   if ("notfound" in raw) {
@@ -346,6 +357,8 @@ function InProgress({ view }: { view: ModeratorView }) {
   const alive = game.players.filter((p) => p.alive);
   const [nightPicks, setNightPicks] = useState<Set<string>>(new Set());
   const hunter = game.pendingHunterId ? game.players.find((p) => p.id === game.pendingHunterId) : null;
+  // Yeni geceye ancak biri asıldıysa (ya da oyun bittiyse) geçilebilir.
+  const canGoNight = game.hangedThisDay || !!game.winner;
 
   function toggleNight(id: string) {
     setNightPicks((s) => {
@@ -445,25 +458,14 @@ function InProgress({ view }: { view: ModeratorView }) {
               {!game.vote.active ? (
                 <div className="space-y-2">
                   <button onClick={() => act("voteStart")} className="btn btn-amber w-full">🗳️ Oylamayı başlat</button>
-                  {(() => {
-                    const canNext = game.hangedThisDay || !!game.winner;
-                    return (
-                      <>
-                        <button
-                          onClick={() => act("nextNight")}
-                          disabled={!canNext}
-                          className="btn btn-violet w-full"
-                        >
-                          🌙 Yeni geceye geç
-                        </button>
-                        {!canNext && (
-                          <p className="text-center text-xs text-[var(--faint)]">
-                            Yeni geceye geçmek için önce bir kişi asılmalı.
-                          </p>
-                        )}
-                      </>
-                    );
-                  })()}
+                  <button onClick={() => act("nextNight")} disabled={!canGoNight} className="btn btn-violet w-full">
+                    🌙 Yeni geceye geç
+                  </button>
+                  {!canGoNight && (
+                    <p className="text-center text-xs text-[var(--faint)]">
+                      Yeni geceye geçmek için önce bir kişi asılmalı.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -486,13 +488,13 @@ function InProgress({ view }: { view: ModeratorView }) {
           <div className="mb-3 flex gap-2">
             <button
               onClick={() => act(game.phase === "night" ? "nightResolve" : "nextNight", game.phase === "night" ? { deaths: [] } : {})}
-              disabled={game.phase === "day" && !game.hangedThisDay && !game.winner}
+              disabled={game.phase === "day" && !canGoNight}
               className="btn btn-ghost flex-1 text-sm"
             >
               {game.phase === "night" ? "Gündüze geç" : "Yeni geceye geç"}
             </button>
           </div>
-          {game.phase === "day" && !game.hangedThisDay && !game.winner && (
+          {game.phase === "day" && !canGoNight && (
             <p className="mb-3 text-center text-xs text-[var(--faint)]">Yeni geceye geçmek için önce bir kişi asılmalı.</p>
           )}
           {game.phase === "night" && (
@@ -522,7 +524,7 @@ function InProgress({ view }: { view: ModeratorView }) {
 
       <Section title="Oyuncular & Roller">
         <div className="space-y-1.5">
-          {game.players.map((p) => <PlayerRow key={p.id} game={game} playerId={p.id} />)}
+          {game.players.map((p) => <PlayerRow key={p.id} game={game} p={p} />)}
         </div>
       </Section>
 
@@ -570,9 +572,8 @@ function ModAnnouncement({ game }: { game: Game }) {
   );
 }
 
-function PlayerRow({ game, playerId }: { game: Game; playerId: string }) {
+function PlayerRow({ game, p }: { game: Game; p: Player }) {
   const act = useAct();
-  const p = game.players.find((x) => x.id === playerId)!;
   const role = game.roles.find((r) => r.key === p.role) ?? null;
   const meta = roleMeta(role);
   const evil = role?.team === "vampir";
@@ -593,18 +594,7 @@ function PlayerRow({ game, playerId }: { game: Game; playerId: string }) {
 function Ended({ view }: { view: ModeratorView }) {
   const game = view.game;
   const act = useAct();
-  const jester = game.winner === "soytari";
-  const evil = game.winner === "vampir";
-  const decided = jester || evil || game.winner === "koy";
-  const accent = jester ? "#ec4899" : evil ? "#ef4444" : "#34d399";
-  const textColor = jester ? "#f9a8d4" : evil ? "#fca5a5" : "#6ee7b7";
-  const palette = jester
-    ? ["#ec4899", "#f472b6", "#a855f7", "#f59e0b", "#ffffff"]
-    : evil
-      ? ["#ef4444", "#b91c1c", "#a855f7", "#fca5a5", "#f59e0b"]
-      : ["#34d399", "#6ee7b7", "#22d3ee", "#f59e0b", "#ffffff"];
-  const WinIcon = jester ? JesterIcon : evil ? BatIcon : CrownIcon;
-  const title = jester ? "Soytarı Kazandı" : evil ? "Vampirler Kazandı" : game.winner === "koy" ? "Köy Kazandı" : "Oyun Bitti";
+  const { decided, accent, textColor, iconColor, palette, Icon: WinIcon, title } = winnerTheme(game.winner);
   return (
     <div className="space-y-5">
       <motion.div
@@ -621,7 +611,7 @@ function Ended({ view }: { view: ModeratorView }) {
           initial={{ scale: 0, rotate: -30 }}
           animate={{ scale: 1, rotate: 0 }}
           transition={{ type: "spring", stiffness: 200, damping: 12, delay: 0.12 }}
-          style={{ color: jester ? "#f9a8d4" : evil ? "#fca5a5" : "#fde68a" }}
+          style={{ color: iconColor }}
         >
           <WinIcon size={decided ? 54 : 48} strokeWidth={1.6} />
         </motion.div>
@@ -631,7 +621,7 @@ function Ended({ view }: { view: ModeratorView }) {
       </motion.div>
 
       <Section title="Roller">
-        <div className="space-y-1.5">{game.players.map((p) => <PlayerRow key={p.id} game={game} playerId={p.id} />)}</div>
+        <div className="space-y-1.5">{game.players.map((p) => <PlayerRow key={p.id} game={game} p={p} />)}</div>
       </Section>
 
       <div className="grid gap-2 sm:grid-cols-3">
@@ -647,6 +637,7 @@ function Ended({ view }: { view: ModeratorView }) {
 /* ------------------------------ Ortak ------------------------------ */
 function CloseRoomButton() {
   const act = useAct();
+  const code = useContext(CodeContext);
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -665,6 +656,7 @@ function CloseRoomButton() {
         onConfirm={async () => {
           setBusy(true);
           await act("closeRoom");
+          forgetRoom(code); // oda silindi — ana sayfada ölü kart kalmasın
           router.push("/");
         }}
         onCancel={() => setOpen(false)}
