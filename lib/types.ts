@@ -31,6 +31,9 @@ export interface RoleConfig {
 export interface Player {
   id: string; // istemcide localStorage'da saklanır
   name: string;
+  // Kayıtlı hesapla katıldıysa hesabın kimliği; ziyaretçiyse null. Maç geçmişi
+  // ve "hesaba göre rol dağıtımı" bu alan üzerinden bağlanır.
+  userId: string | null;
   role: string | null; // atanan rol anahtarı
   alive: boolean;
   joinedAt: number;
@@ -143,6 +146,75 @@ export interface SessionSummary extends RoomSummary {
   exists: boolean; // bu playerId hâlâ odanın oyuncu listesinde mi
   playerName: string | null; // odadaki adı (yoksa null)
   alive: boolean; // oyunda hâlâ hayatta mı (bilgi amaçlı)
+}
+
+/* ============================================================
+   Hesaplar — ad + şifre. Kayıt tamamen isteğe bağlıdır: ziyaretçi de oynar,
+   sadece ismi bu cihazda kısa süre hatırlanır. Hesabı olan her cihazdan aynı
+   kimlikle girer ve maç geçmişi birikir.
+   ============================================================ */
+
+export interface UserDoc {
+  _id: string; // rastgele kimlik (oyunlarda Player.userId olarak geçer)
+  key: string; // benzersizlik anahtarı — adın normalize (katlanmış) hâli
+  name: string; // görünen ad, kullanıcının yazdığı hâliyle
+  passwordHash: string; // scrypt; şifrenin kendisi ASLA saklanmaz
+  createdAt: number;
+  lastSeenAt: number;
+}
+
+// Oturum kaydı. Çerezdeki ham jeton değil, onun sha256'sı saklanır: veritabanı
+// sızsa bile jetonlar kullanılamaz.
+export interface SessionDoc {
+  _id: string; // sha256(token)
+  userId: string;
+  createdAt: number;
+  expiresAt: Date; // TTL indeksi bu alanı kullanır
+}
+
+// İstemciye dönen güvenli hesap özeti (hash/jeton içermez).
+export interface AccountView {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
+/* ------------------------- Maç geçmişi -------------------------
+   Odalar 1 saat sonra silindiği için oyun bitince geriye hiçbir şey kalmıyordu.
+   Maç kaydı roller DAĞITILDIĞI ANDA açılır, sonuç belli olunca güncellenir —
+   böylece yarıda bırakılan (özellikle sözlü) oyunlar da "roller dağıtıldı ama
+   sonuç girilmedi" olarak kayda geçer. */
+
+export interface MatchPlayer {
+  userId: string | null; // ziyaretçi ise null
+  name: string;
+  roleKey: string | null;
+  roleName: string | null;
+  team: Team | null;
+  special?: SpecialKey;
+  alive: boolean; // maç bittiğinde hayatta mıydı
+  won: boolean | null; // sonuç bilinmiyorsa null
+  lover: boolean; // âşık çiftten biri miydi
+}
+
+export interface MatchRecord {
+  _id: string; // `${oda kodu}:${startedAt}` — aynı el iki kez yazılmaz
+  code: string;
+  roomName: string;
+  mode: GameMode; // "verbal" ise sonuç güvenilmez olabilir (bkz. finished)
+  assignMode: AssignMode;
+  startedAt: number;
+  endedAt: number | null;
+  // Oyun uygulama üzerinden sonuca bağlandı mı. false ise sözlü modda masada
+  // bitmiş ya da moderatör odayı öylece bırakmıştır — roller yine de geçerli.
+  finished: boolean;
+  winner: Winner | null;
+  dayCount: number;
+  playerCount: number;
+  loversEnabled: boolean;
+  userIds: string[]; // "benim maçlarım" sorgusu için indekslenir
+  players: MatchPlayer[];
+  rounds: RoundEvent[]; // geceler, ölümler, infazlar
 }
 
 // SSE ile istemciye gönderilen projeksiyonlar

@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { motion } from "motion/react";
-import { useStream, postAction, usePlayerId, savePlayerId, clearPlayerId, forgetRoom } from "@/app/_lib/client";
+import { useStream, postAction, usePlayerId, savePlayerId, clearPlayerId, forgetRoom, useGuestName } from "@/app/_lib/client";
 import { SceneBackdrop, TopBar, Spinner, winnerTheme } from "@/app/_lib/ui";
+import { useAccount, useIdentityGate } from "@/app/_lib/account";
 import { usePactGuard, RoundReminder } from "@/app/_lib/pact";
 import { useStartCountdown, StartCountdown } from "@/app/_lib/countdown";
 import { roleMeta, SURVIVOR_SHIELDS } from "@/lib/roles";
@@ -13,6 +14,7 @@ import {
   RoleGlyph, Burst, MoonIcon, SunIcon, SkullIcon,
   BallotIcon, CheckIcon, CrossIcon, CrystalIcon, CrosshairIcon, ShieldIcon, LockIcon, BatIcon,
 } from "@/app/_lib/icons";
+
 import type { ParticipantView, TurnInfo, Team, Announcement } from "@/lib/types";
 
 const TURN_ICON: Record<TurnInfo["kind"], (p: { size?: number; strokeWidth?: number }) => React.ReactElement> = {
@@ -37,13 +39,20 @@ export default function OynaPage() {
   const params = useParams();
   const code = Array.isArray(params.code) ? params.code[0] : (params.code as string) ?? "";
   const playerId = usePlayerId(code);
-  const [name, setName] = useState("");
+  // Yazılan isim yoksa hatırlanan ziyaretçi ismi (render sırasında türetilir).
+  const [typedName, setTypedName] = useState<string | null>(null);
+  const rememberedName = useGuestName();
+  const name = typedName ?? rememberedName ?? "";
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Köy Sözleşmesi: köye girmeden önce bir kez onaylanır (davetle doğrudan
   // bu sayfaya gelenler ana sayfadaki kapıyı görmüyor).
   const { guard, pactModal } = usePactGuard();
+  // Kimlik kapısı: hesap varsa isim sorulmaz, ilk kez gelen ziyaretçiye
+  // "ziyaretçi olarak devam / kayıt ol" modalı çıkar.
+  const { account } = useAccount();
+  const { gate, identityModal } = useIdentityGate();
 
   const url = code ? `/api/stream?code=${code}${playerId ? `&playerId=${playerId}` : ""}` : null;
   const raw = useStream<Raw>(url);
@@ -65,14 +74,19 @@ export default function OynaPage() {
     if (notFound && code) forgetRoom(code);
   }, [notFound, code]);
 
-  async function join() {
-    const trimmed = name.trim();
+  // Önce kimlik (hesap / ziyaretçi), sonra katılım.
+  function startJoin() {
+    const trimmed = account ? account.name : name.trim();
     if (!trimmed) return;
     // Şifreli odada şifre de zorunlu.
     if (view?.hasPassword && !pw.trim()) return;
+    gate(trimmed, join);
+  }
+
+  async function join(finalName: string) {
     setBusy(true);
     setError(null);
-    const res = await postAction("join", { code, name: trimmed, password: pw });
+    const res = await postAction("join", { code, name: finalName, password: pw });
     setBusy(false);
     if (res.ok && res.playerId) {
       savePlayerId(code, res.playerId);
@@ -140,16 +154,26 @@ export default function OynaPage() {
               <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-[var(--amber)]"><LockIcon size={13} /> Bu oda şifreli</p>
             )}
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); guard(join); }}>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="İsminiz"
-              maxLength={24}
-              autoFocus
-              enterKeyHint={view.hasPassword ? "next" : "go"}
-              className="input"
-            />
+          <form onSubmit={(e) => { e.preventDefault(); guard(startJoin); }}>
+            {/* Hesaplıysa isim sorulmaz — odaya hesabın adıyla girilir. */}
+            {account ? (
+              <div className="flex items-center gap-2 rounded-xl px-3 py-2.5" style={{ background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.28)" }}>
+                <CheckIcon size={16} />
+                <p className="text-[13px] text-[var(--muted)]">
+                  <b className="text-[var(--ink)]">{account.name}</b> olarak katılacaksın
+                </p>
+              </div>
+            ) : (
+              <input
+                value={name}
+                onChange={(e) => setTypedName(e.target.value)}
+                placeholder="İsminiz"
+                maxLength={24}
+                autoFocus
+                enterKeyHint={view.hasPassword ? "next" : "go"}
+                className="input"
+              />
+            )}
             {view.hasPassword && (
               <input
                 value={pw}
@@ -164,7 +188,7 @@ export default function OynaPage() {
             {error && <p className="mt-2 text-sm text-[var(--blood)]">{error}</p>}
             <button
               type="submit"
-              disabled={busy || !name.trim() || (view.hasPassword && !pw.trim())}
+              disabled={busy || (!account && !name.trim()) || (view.hasPassword && !pw.trim())}
               className="btn btn-blood btn-lg mt-4 w-full"
             >
               {busy ? "Katılıyor…" : "Köye Gir"}
@@ -172,6 +196,7 @@ export default function OynaPage() {
           </form>
         </motion.div>
         {pactModal}
+        {identityModal}
       </div>
     );
   }

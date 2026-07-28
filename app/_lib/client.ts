@@ -35,6 +35,62 @@ export function clearPlayerId(code: string) {
   idListeners.forEach((l) => l());
 }
 
+/* --- Misafir ismi (kısa süreli hatırlama) ---
+   Kayıt olmayan oyuncu her odaya girişte adını yeniden yazmasın diye ismi bu
+   cihazda saklıyoruz — ama KISA süre (1 saat). Kalıcı kimlik hesap işidir;
+   ziyaretçi hatırlaması yalnızca "bu akşamki oyun" içindir. Süre dolunca
+   katılım ekranında kimlik modalı yeniden çıkar ve kayıt teklif edilir. */
+
+export const GUEST_NAME_TTL_MS = 60 * 60 * 1000; // 1 saat
+const NAME_KEY = "vk_name";
+
+interface StoredName {
+  name: string;
+  exp: number; // son geçerlilik damgası
+}
+
+/**
+ * Hatırlanan misafir ismi; yoksa ya da süresi dolduysa null.
+ * Yan etkisizdir (bayat kaydı silmez) — render sırasında da güvenle okunur.
+ */
+export function readGuestName(): string | null {
+  if (typeof localStorage === "undefined") return null;
+  const raw = localStorage.getItem(NAME_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as StoredName;
+    if (!parsed?.name || typeof parsed.exp !== "number") return null;
+    return Date.now() < parsed.exp ? parsed.name : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Hatırlanan ismi React'çe okur (SSR'da null döner, hidrasyon uyuşmazlığı yok). */
+export function useGuestName(): string | null {
+  const subscribe = useCallback((cb: () => void) => {
+    idListeners.add(cb);
+    window.addEventListener("storage", cb);
+    return () => {
+      idListeners.delete(cb);
+      window.removeEventListener("storage", cb);
+    };
+  }, []);
+  return useSyncExternalStore(subscribe, readGuestName, () => null);
+}
+
+/** İsmi kaydeder / süresini baştan başlatır. */
+export function saveGuestName(name: string) {
+  const value: StoredName = { name: name.trim().slice(0, 24), exp: Date.now() + GUEST_NAME_TTL_MS };
+  localStorage.setItem(NAME_KEY, JSON.stringify(value));
+  idListeners.forEach((l) => l());
+}
+
+export function clearGuestName() {
+  localStorage.removeItem(NAME_KEY);
+  idListeners.forEach((l) => l());
+}
+
 /* --- Kayıtlı oturumlar ("devam eden odalarım") ---
    Tarayıcı bir odaya girildiğini localStorage'da tutar. Sekme kapansa, sayfa
    yenilense ya da bağlantı kopsa bile kullanıcı ana sayfadan odaya dönebilir.
@@ -173,7 +229,7 @@ export function useStream<T>(url: string | null): T | null {
 export async function postAction(
   action: string,
   payload: Record<string, unknown> = {}
-): Promise<{ ok: boolean; error?: string; playerId?: string; code?: string }> {
+): Promise<{ ok: boolean; error?: string; playerId?: string; code?: string; name?: string }> {
   try {
     const res = await fetch("/api/game", {
       method: "POST",

@@ -172,6 +172,8 @@ export async function getGame(code: string): Promise<Game | null> {
   game.hangedThisDay ??= false;
   game.assignMode ??= "random";
   game.roundLog ??= [];
+  // Hesap sistemi öncesi kaydedilmiş oyuncularda userId alanı yok.
+  game.players?.forEach((p) => (p.userId ??= null));
   return game;
 }
 
@@ -303,6 +305,32 @@ export async function listSessions(
         alive: me?.alive ?? false,
       };
     });
+}
+
+// Odadaki en uzun isim. Sonek eklenirken de bu sınır aşılmaz.
+export const MAX_NAME_LEN = 24;
+
+/**
+ * İstenen ismi odada benzersiz hâle getirir: "Emir" doluysa "Emir (2)",
+ * o da doluysa "Emir (3)"…
+ *
+ * Katılımı isim yüzünden reddetmemek için var. Özellikle hesaplı oyuncu için
+ * şart: onun odadaki adı hesabının adıdır, değiştiremez — bir ziyaretçi aynı
+ * ismi kapmışsa sonek olmadan odaya hiç giremezdi.
+ *
+ * Sonek isim sınırını taşırıyorsa gövde kısaltılır ("Çokuzunbirisimburada" →
+ * "Çokuzunbirisimbura (2)"). 99 denemede yer açılmazsa null döner.
+ */
+export function uniqueName(game: Game, base: string): string | null {
+  const taken = new Set(game.players.map((p) => p.name.toLowerCase()));
+  if (!taken.has(base.toLowerCase())) return base;
+  for (let n = 2; n <= 99; n++) {
+    const suffix = ` (${n})`;
+    const stem = base.slice(0, MAX_NAME_LEN - suffix.length).trimEnd();
+    const candidate = stem + suffix;
+    if (!taken.has(candidate.toLowerCase())) return candidate;
+  }
+  return null;
 }
 
 /** Bir oyuncuyu odadan çıkarır. Yalnızca lobide izinlidir — süren bir elde

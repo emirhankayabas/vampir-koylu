@@ -4,7 +4,7 @@ import {
   makeFreshGame, defaultRoles, assignRolesFor, assignLovers, loverPartnerId,
   beginNight, resolveNight, submitNightAction, resolveVote, hangPlayer, hunterShoot,
   checkWinner, finalizeWinner, computeNightOrder, participantView, roleTeam,
-  leaveGame, SURVIVOR_SHIELDS, randomRoomName,
+  leaveGame, uniqueName, MAX_NAME_LEN, SURVIVOR_SHIELDS, randomRoomName,
 } from "@/lib/game";
 import type { Game } from "@/lib/types";
 
@@ -23,7 +23,7 @@ function mkGame(defs: { name: string; role: string | null }[], opts?: Partial<Ga
   g.mode = "phone";
   g.status = "in_progress";
   g.dayNumber = 1;
-  g.players = defs.map((d, i) => ({ id: "p" + i, name: d.name, role: d.role, alive: true, joinedAt: i }));
+  g.players = defs.map((d, i) => ({ id: "p" + i, name: d.name, userId: null, role: d.role, alive: true, joinedAt: i }));
   Object.assign(g, opts);
   return g;
 }
@@ -60,7 +60,7 @@ section("2) Rastgele rol dağıtımı");
   g.roles = defaultRoles().map((r) =>
     r.key === "vampir" ? { ...r, count: 2 } : r.key === "doktor" ? { ...r, count: 1 } : r
   );
-  g.players = Array.from({ length: 6 }, (_, i) => ({ id: "p" + i, name: "P" + i, role: null, alive: true, joinedAt: i }));
+  g.players = Array.from({ length: 6 }, (_, i) => ({ id: "p" + i, name: "P" + i, userId: null, role: null, alive: true, joinedAt: i }));
   const res = assignRolesFor(g);
   check("assign ok", res.ok, res);
   check("herkese rol atandı", g.players.every((p) => p.role));
@@ -334,6 +334,34 @@ section("22) Odadan ayrılma");
 
   // Bilinmeyen kimlik hata değil (istemci yerel kaydını silsin yeter).
   check("bilinmeyen oyuncu sorunsuz", leaveGame(gp, "yok-boyle-biri").ok);
+}
+
+section("23) İsim çakışmasında otomatik sonek");
+{
+  const g = mkGame([{ name: "Emir", role: null }], { status: "lobby" });
+  check("boş isim olduğu gibi kalır", uniqueName(g, "Deniz") === "Deniz");
+  check("dolu isme (2) eklenir", uniqueName(g, "Emir") === "Emir (2)", uniqueName(g, "Emir"));
+
+  // Büyük/küçük harf farkı da çakışma sayılır (katılım kontrolüyle aynı kural).
+  check("büyük/küçük harf çakışması", uniqueName(g, "emir") === "emir (2)", uniqueName(g, "emir"));
+
+  // Sonek de doluysa sıradaki numaraya geçer.
+  g.players.push({ id: "x", name: "Emir (2)", userId: null, role: null, alive: true, joinedAt: 1 });
+  check("sonek doluysa (3)", uniqueName(g, "Emir") === "Emir (3)", uniqueName(g, "Emir"));
+
+  // Sonek isim sınırını taşırmamalı — gövde kısaltılır.
+  const uzun = "A".repeat(MAX_NAME_LEN);
+  const gl = mkGame([{ name: uzun, role: null }], { status: "lobby" });
+  const soneklı = uniqueName(gl, uzun)!;
+  check("uzun isim sınırı aşmaz", soneklı.length <= MAX_NAME_LEN, { soneklı, len: soneklı.length });
+  check("uzun isim (2) ile biter", soneklı.endsWith(" (2)"), soneklı);
+
+  // 99 varyantın hepsi doluysa null döner (çağıran taraf hata mesajı verir).
+  const gf = mkGame([{ name: "X", role: null }], { status: "lobby" });
+  for (let n = 2; n <= 99; n++) {
+    gf.players.push({ id: "f" + n, name: `X (${n})`, userId: null, role: null, alive: true, joinedAt: n });
+  }
+  check("tükenince null", uniqueName(gf, "X") === null, uniqueName(gf, "X"));
 }
 
 // ---------------------------------------------------------------------------

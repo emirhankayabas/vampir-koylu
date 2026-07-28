@@ -19,12 +19,16 @@ import {
   hunterShoot,
   killPlayer,
   leaveGame,
+  uniqueName,
+  MAX_NAME_LEN,
   roleOf,
   log,
   recordRound,
   VersionConflictError,
 } from "@/lib/game";
-import type { Game, RoleConfig, NightRole, RoundDeath } from "@/lib/types";
+import { SESSION_COOKIE, userFromToken } from "@/lib/auth";
+import { recordMatchStart, recordMatchEnd } from "@/lib/matches";
+import type { Game, RoleConfig, NightRole, RoundDeath, UserDoc } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +73,18 @@ export async function POST(request: NextRequest) {
     }
   }
 
+  // Odaya katılırken oturumdaki hesabı çözüyoruz: kayıtlı oyuncunun maç geçmişi
+  // ancak böyle birikir. Hesap yoksa (ziyaretçi) sessizce null kalır ve oyun
+  // eskisi gibi çalışır.
+  let account: UserDoc | null = null;
+  if (action === "join") {
+    try {
+      account = await userFromToken(request.cookies.get(SESSION_COOKIE)?.value);
+    } catch {
+      account = null; // hesap katmanı çökse bile ziyaretçi olarak oynanabilmeli
+    }
+  }
+
   // Diğer tüm aksiyonlar bir oda kodu gerektirir.
   //
   // İki oyuncu aynı anda hamle yaparsa (iki vampir hedef seçer, herkes aynı
@@ -85,7 +101,7 @@ export async function POST(request: NextRequest) {
     if (!game) return bad("Oda bulunamadı. Kodu kontrol edin.", 404);
 
     try {
-      return await handleAction(game, action, body);
+      return await handleAction(game, action, body, account);
     } catch (err) {
       if (!(err instanceof VersionConflictError)) {
         return bad("İşlem tamamlanamadı, tekrar deneyin.", 500);
@@ -97,10 +113,43 @@ export async function POST(request: NextRequest) {
   return bad("Oda şu an çok yoğun, tekrar deneyin.", 409);
 }
 
+/**
+ * Aksiyonu uygular ve maç geçmişini günceller.
+ *
+ * Geçmiş yazımı motorun DIŞINDA, tek bir yerde duruyor: roller dağıtılıp oyun
+ * `in_progress`e geçtiği anda kayıt açılır, sonuç belli olunca kapatılır.
+ * Geçmiş yazılamazsa oyun etkilenmez — kayıt tutmak oynamayı engellememeli.
+ */
 async function handleAction(
   game: Game,
   action: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
+  account: UserDoc | null
+): Promise<NextResponse> {
+  const statusBefore = game.status;
+  const winnerBefore = game.winner;
+  const res = await applyAction(game, action, body, account);
+
+  try {
+    if (statusBefore !== "in_progress" && game.status === "in_progress" && game.startedAt) {
+      await recordMatchStart(game);
+    } else if (
+      statusBefore === "in_progress" &&
+      ((!winnerBefore && game.winner) || game.status === "ended")
+    ) {
+      await recordMatchEnd(game);
+    }
+  } catch {
+    /* geçmiş kaydı yazılamadı — oyun akışı bundan etkilenmez */
+  }
+  return res;
+}
+
+async function applyAction(
+  game: Game,
+  action: string,
+  body: Record<string, unknown>,
+  account: UserDoc | null
 ): Promise<NextResponse> {
   switch (action) {
     // --- Katılımcı aksiyonları ---
@@ -110,16 +159,31 @@ async function handleAction(
       if (game.password && String(body.password ?? "") !== game.password) {
         return bad("Oda şifresi hatalı.");
       }
-      const name = String(body.name ?? "").trim();
-      if (!name) return bad("İsim boş olamaz.");
-      if (name.length > 24) return bad("İsim çok uzun.");
-      if (game.players.some((p) => p.name.toLowerCase() === name.toLowerCase()))
-        return bad("Bu isim zaten alınmış.");
+      // Girişliyse odadaki ad HESABIN adıdır: istemciden gelen isim dikkate
+      // alınmaz. Böylece geçmiş tutarlı kalır ve kimse başka bir hesabın adıyla
+      // masaya oturamaz.
+      const wanted = (account ? account.name : String(body.name ?? "")).trim();
+      if (!wanted) return bad("İsim boş olamaz.");
+      if (wanted.length > MAX_NAME_LEN) return bad("İsim çok uzun.");
+      // Aynı hesap iki kez katılamaz (iki cihazdan girip iki rol almasın).
+      if (account && game.players.some((p) => p.userId === account._id))
+        return bad("Bu hesapla zaten odadasın.");
+      // İsim doluysa katılımı reddetmek yerine sonek veriyoruz: "Emir (2)".
+      const name = uniqueName(game, wanted);
+      if (!name) return bad("Bu isimden odada çok fazla var, başka bir isim deneyin.");
       const id = crypto.randomUUID();
-      game.players.push({ id, name, role: null, alive: true, joinedAt: Date.now() });
+      game.players.push({
+        id,
+        name,
+        userId: account?._id ?? null,
+        role: null,
+        alive: true,
+        joinedAt: Date.now(),
+      });
       log(game, `${name} katıldı.`);
       await saveGame(game);
-      return ok({ playerId: id });
+      // `name`i geri veriyoruz: sonek eklendiyse istemci bunu kullanıcıya söyler.
+      return ok({ playerId: id, name });
     }
 
     case "vote": {

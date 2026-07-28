@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import { postAction, savePlayerId, saveModeratorRoom } from "@/app/_lib/client";
+import { postAction, savePlayerId, saveModeratorRoom, useGuestName } from "@/app/_lib/client";
 import { ActiveSessions } from "@/app/_lib/sessions";
+import { AccountButton, useAccount, useIdentityGate } from "@/app/_lib/account";
 import { usePactGuard, PactModal } from "@/app/_lib/pact";
-import { Crest, RoleGlyph, PlayIcon, KeyIcon, ArrowLeftIcon, HomeIcon } from "@/app/_lib/icons";
+import { Crest, RoleGlyph, PlayIcon, KeyIcon, ArrowLeftIcon, HomeIcon, CheckIcon } from "@/app/_lib/icons";
 import { metaByKey } from "@/lib/roles";
 import type { RoleConfig } from "@/lib/types";
 
@@ -22,7 +23,11 @@ const SHOWCASE: RoleConfig[] = [
 export default function Home() {
   const router = useRouter();
   const [view, setView] = useState<"home" | "join">("home");
-  const [name, setName] = useState("");
+  // Kullanıcı bir şey yazmadıysa hatırlanan ziyaretçi ismi kullanılır. Türetme
+  // render sırasında yapılıyor — efektle setState etmeye gerek yok.
+  const [typedName, setTypedName] = useState<string | null>(null);
+  const rememberedName = useGuestName();
+  const name = typedName ?? rememberedName ?? "";
   const [code, setCode] = useState("");
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState<null | "create" | "join">(null);
@@ -30,6 +35,9 @@ export default function Home() {
   // Köy Sözleşmesi: odaya girmeden (ya da oda kurmadan) önce bir kez onaylanır.
   const { guard, pactModal } = usePactGuard();
   const [readPact, setReadPact] = useState(false);
+  // Kimlik: hesap varsa isim sorulmaz; yoksa ilk katılımda ziyaretçi/kayıt modalı.
+  const { account } = useAccount();
+  const { gate, identityModal } = useIdentityGate();
 
   async function createRoom() {
     setBusy("create");
@@ -44,16 +52,23 @@ export default function Home() {
     }
   }
 
-  async function joinRoom() {
-    const n = name.trim();
+  // Katılım iki adım: önce kimliği netleştir (hesap / ziyaretçi), sonra katıl.
+  function startJoin() {
+    const n = account ? account.name : name.trim();
     const c = code.replace(/\D/g, "").slice(0, 6);
     if (!n || c.length !== 6) {
-      setError("İsim ve 6 haneli kodu girin.");
+      setError(account ? "6 haneli kodu girin." : "İsim ve 6 haneli kodu girin.");
       return;
     }
+    setError(null);
+    gate(n, joinRoom);
+  }
+
+  async function joinRoom(finalName: string) {
+    const c = code.replace(/\D/g, "").slice(0, 6);
     setBusy("join");
     setError(null);
-    const res = await postAction("join", { code: c, name: n, password: pw });
+    const res = await postAction("join", { code: c, name: finalName, password: pw });
     if (res.ok && res.playerId) {
       savePlayerId(c, res.playerId);
       router.push(`/oyna/${c}`);
@@ -64,7 +79,12 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6 py-10 safe-b">
+    <div className="relative flex flex-1 flex-col items-center justify-center px-6 py-10 safe-b">
+      {/* --------- Hesap köşesi --------- */}
+      <div className="absolute right-4 top-4 z-30">
+        <AccountButton />
+      </div>
+
       {/* --------- Kahraman: amblem + başlık --------- */}
       <motion.div
         initial={{ opacity: 0, scale: 0.86, y: -8 }}
@@ -187,18 +207,32 @@ export default function Home() {
               </div>
               <div>
                 <p className="font-display text-xl font-bold leading-none">Odaya Katıl</p>
-                <p className="mt-1 text-xs text-[var(--faint)]">İsmini ve moderatörün kodunu gir.</p>
+                <p className="mt-1 text-xs text-[var(--faint)]">
+                  {account ? "Moderatörün kodunu gir." : "İsmini ve moderatörün kodunu gir."}
+                </p>
               </div>
             </div>
 
-            <label className="mb-1.5 block text-xs uppercase tracking-wider text-[var(--faint)]">İsmin</label>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Örn. Emir"
-              maxLength={24}
-              className="input mb-4"
-            />
+            {/* Hesaplıysa isim sorulmaz — odaya hesabın adıyla girilir. */}
+            {account ? (
+              <div className="mb-4 flex items-center gap-2 rounded-xl px-3 py-2.5" style={{ background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.28)" }}>
+                <CheckIcon size={16} />
+                <p className="text-[13px] text-[var(--muted)]">
+                  <b className="text-[var(--ink)]">{account.name}</b> olarak katılacaksın
+                </p>
+              </div>
+            ) : (
+              <>
+                <label className="mb-1.5 block text-xs uppercase tracking-wider text-[var(--faint)]">İsmin</label>
+                <input
+                  value={name}
+                  onChange={(e) => setTypedName(e.target.value)}
+                  placeholder="Örn. Emir"
+                  maxLength={24}
+                  className="input mb-4"
+                />
+              </>
+            )}
             <label className="mb-1.5 block text-xs uppercase tracking-wider text-[var(--faint)]">Oda Kodu</label>
             <input
               value={code}
@@ -211,14 +245,14 @@ export default function Home() {
             <input
               value={pw}
               onChange={(e) => setPw(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && guard(joinRoom)}
+              onKeyDown={(e) => e.key === "Enter" && guard(startJoin)}
               type="password"
               placeholder="Oda şifresiz ise boş bırak"
               maxLength={40}
               className="input"
             />
             {error && <p className="mt-3 text-center text-sm text-[var(--blood)]">{error}</p>}
-            <button onClick={() => guard(joinRoom)} disabled={busy !== null} className="btn btn-emerald btn-lg mt-5 w-full">
+            <button onClick={() => guard(startJoin)} disabled={busy !== null} className="btn btn-emerald btn-lg mt-5 w-full">
               {busy === "join" ? "Katılıyor…" : "Köye Gir"}
             </button>
             <button onClick={() => { setView("home"); setError(null); }} className="btn btn-ghost mt-2 w-full">
@@ -229,6 +263,7 @@ export default function Home() {
       </div>
 
       {pactModal}
+      {identityModal}
       <PactModal readOnly open={readPact} onAccept={() => setReadPact(false)} onCancel={() => setReadPact(false)} />
     </div>
   );
