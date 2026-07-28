@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 150" width="620" height="150" role="img" aria-label="Vampir Köylü">
+  <title>Vampir Köylü</title>
+  <!--
+    Yatay logo kilidi (amblem + kelime markası). README, mağaza görselleri ve
+    açılış ekranı için. Zemin şeffaftır; kelime markası mor→kırmızı degrade
+    olduğu için hem koyu hem açık zeminde okunur.
+
+    Yazı tipi: Cinzel (uygulamanın font-display değişkeni). Cinzel yüklü olmayan
+    bir ortamda serif'e düşer — mağaza görseli gibi piksel-kesin bir yerde
+    kullanacaksan yazıyı bir kez path'e çevirmek gerekir.
+    Yalnızca amblem lazımsa app/icon.svg dosyasını kullan.
+  -->
+  <defs>
+    <linearGradient id="lg-shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a1030"/>
+      <stop offset="0.55" stop-color="#3a0f1c"/>
+      <stop offset="1" stop-color="#1a0a1f"/>
+    </linearGradient>
+    <linearGradient id="lg-edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c084fc"/>
+      <stop offset="0.5" stop-color="#a855f7"/>
+      <stop offset="1" stop-color="#ef4444"/>
+    </linearGradient>
+    <linearGradient id="lg-fang" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e9d5ff"/>
+    </linearGradient>
+    <linearGradient id="lg-word" x1="0" y1="0" x2="1" y2="0.6">
+      <stop offset="0" stop-color="#e9d5ff"/>
+      <stop offset="0.45" stop-color="#c084fc"/>
+      <stop offset="1" stop-color="#ef4444"/>
+    </linearGradient>
+    <filter id="lg-glow" x="-40%" y="-60%" width="180%" height="220%">
+      <feGaussianBlur stdDeviation="6" result="b"/>
+      <feMerge>
+        <feMergeNode in="b"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Amblem -->
+  <g transform="translate(14, 16) scale(0.92)">
+    <path d="M60 8 L104 22 V60 C104 90 84 108 60 116 C36 108 16 90 16 60 V22 Z"
+          fill="url(#lg-shield)" stroke="url(#lg-edge)" stroke-width="3.5" stroke-linejoin="round"/>
+    <path d="M60 16 L96 27 V60 C96 85 79 101 60 108 C41 101 24 85 24 60 V27 Z"
+          fill="none" stroke="rgba(168,85,247,0.35)" stroke-width="1.5"/>
+
+    <!-- Yarasa kanatları -->
+    <path d="M60 44 c-4 5-9 6-14 4 1 2 1 4 0 6 -3-1-6 0-8 2 3 .3 5 2 6 5 3-2 7-2 10 .5 M60 44 c4 5 9 6 14 4 -1 2-1 4 0 6 3-1 6 0 8 2 -3 .3-5 2-6 5 -3-2-7-2-10 .5"
+          fill="rgba(239,68,68,0.18)" stroke="rgba(239,68,68,0.55)" stroke-width="1.5" stroke-linejoin="round"/>
+
+    <!-- Dudak + dişler -->
+    <path d="M44 52 Q60 62 76 52" fill="none" stroke="url(#lg-fang)" stroke-width="3" stroke-linecap="round"/>
+    <path d="M50 55 L57 55 L53.5 74 Z" fill="url(#lg-fang)"/>
+    <path d="M63 55 L70 55 L66.5 74 Z" fill="url(#lg-fang)"/>
+
+    <!-- Kan damlası -->
+    <path d="M66.5 80 c0 0 4 4.5 4 7 a4 4 0 0 1 -8 0 c0-2.5 4-7 4-7Z" fill="#ef4444"/>
+  </g>
+
+  <!-- Kelime markası -->
+  <g transform="translate(150, 0)">
+    <text x="0" y="76"
+          font-family="Cinzel, 'Times New Roman', Georgia, serif"
+          font-size="52" font-weight="900" letter-spacing="1.5"
+          fill="url(#lg-word)" filter="url(#lg-glow)">VAMPİR KÖYLÜ</text>
+    <text x="3" y="104"
+          font-family="Inter, system-ui, -apple-system, 'Segoe UI', sans-serif"
+          font-size="16" font-weight="500" letter-spacing="0.8"
+          fill="#a9a3c7">Gece kimin sıra, gündüz kim asılır?</text>
+  </g>
+</svg>

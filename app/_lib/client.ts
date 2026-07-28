@@ -35,6 +35,22 @@ export function clearPlayerId(code: string) {
   idListeners.forEach((l) => l());
 }
 
+/**
+ * Sayfa, APK kabuğunun içinde mi çalışıyor?
+ *
+ * Capacitor WebView'a `window.Capacitor` köprüsünü enjekte eder. Uygulamanın
+ * içindeki kullanıcıya "uygulamayı indir" demenin anlamı yok — bu bayrak o
+ * bağlantıyı gizlemek için. Değer sayfa ömrü boyunca sabit olduğundan
+ * aboneliğe gerek yok; SSR'da web varsayılır.
+ */
+export function useInApp(): boolean {
+  return useSyncExternalStore(
+    () => () => {},
+    () => typeof window !== "undefined" && !!(window as { Capacitor?: unknown }).Capacitor,
+    () => false
+  );
+}
+
 /* --- Misafir ismi (kısa süreli hatırlama) ---
    Kayıt olmayan oyuncu her odaya girişte adını yeniden yazmasın diye ismi bu
    cihazda saklıyoruz — ama KISA süre (1 saat). Kalıcı kimlik hesap işidir;

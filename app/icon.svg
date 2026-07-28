@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Vampir Köylü">
+  <title>Vampir Köylü</title>
+  <!--
+    Favicon / uygulama simgesi. Ana sayfadaki Crest ambleminin (app/_lib/icons.tsx)
+    16 pikselde de okunan sadeleştirilmiş hâli: yarasa kanatları ve iç çizgi gibi
+    ince detaylar atıldı, dişler kalınlaştırıldı. Kalkan tuvali neredeyse tümüyle
+    doldurur ki sekme simgesi olarak küçülmesin.
+    Capacitor/Android ikon üretimi için de kaynak dosya budur.
+  -->
+  <defs>
+    <linearGradient id="vk-shield" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a1030"/>
+      <stop offset="0.55" stop-color="#3a0f1c"/>
+      <stop offset="1" stop-color="#1a0a1f"/>
+    </linearGradient>
+    <linearGradient id="vk-edge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c084fc"/>
+      <stop offset="0.5" stop-color="#a855f7"/>
+      <stop offset="1" stop-color="#ef4444"/>
+    </linearGradient>
+    <linearGradient id="vk-fang" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e9d5ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Kalkan gövdesi -->
+  <path d="M32 3 L58 11 V33 C58 47.5 47 56.5 32 61 C17 56.5 6 47.5 6 33 V11 Z"
+        fill="url(#vk-shield)" stroke="url(#vk-edge)" stroke-width="3.4" stroke-linejoin="round"/>
+
+  <!-- İç rim: büyük boyutta derinlik verir, 16px'te sessizce kaybolur -->
+  <path d="M32 8.5 L53 15 V33 C53 44.5 44 52 32 56 C20 52 11 44.5 11 33 V15 Z"
+        fill="none" stroke="rgba(168,85,247,0.32)" stroke-width="1.4"/>
+
+  <!-- Dudak + dişler -->
+  <path d="M20 27.5 Q32 34.5 44 27.5" fill="none" stroke="url(#vk-fang)" stroke-width="2.8" stroke-linecap="round"/>
+  <path d="M24 30 L29 30 L26.5 42 Z" fill="url(#vk-fang)"/>
+  <path d="M35 30 L40 30 L37.5 42 Z" fill="url(#vk-fang)"/>
+
+  <!-- Kan damlası -->
+  <path d="M37.5 44.5 c0 0 2.7 3.1 2.7 4.8 a2.7 2.7 0 0 1 -5.4 0 c0-1.7 2.7-4.8 2.7-4.8Z" fill="#ef4444"/>
+</svg>

@@ -1,0 +1,144 @@
+name: Android APK
+
+# APK'yı burada DERLİYORUZ, burada barındırmıyoruz.
+#
+# Neden burada: APK derlemek için JDK + Android SDK gerekiyor; GitHub'ın ubuntu
+# runner'ında ikisi de hazır geliyor, yani kendi makinene Android Studio kurman
+# gerekmiyor. Dağıtım tamamen senin sitenden yapılıyor.
+#
+# TAM OTOMATİK: derlenen APK'yı doğrudan public/vampir-koylu.apk olarak repoya
+# işliyor. Vercel bu commit'i görüp yayınlıyor ve ana sayfadaki indirme kartı
+# kendiliğinden beliriyor. Senin elle dosya taşıman gerekmiyor.
+#
+# NE ZAMAN ÇALIŞIR: yalnızca APK'yı gerçekten etkileyen dosyalar değiştiğinde
+# (aşağıdaki `paths` listesi). Oyunun kodunu/tasarımını değiştirmek APK'yı
+# yeniden derlemez — çünkü APK sadece yayındaki siteyi açan ince bir kabuk,
+# içeriği zaten canlıdan geliyor. Actions sekmesinden elle de tetiklenebilir.
+
+on:
+  workflow_dispatch:
+    inputs:
+      appUrl:
+        description: "Uygulamanın açacağı adres (boşsa APP_URL değişkeni kullanılır)"
+        required: false
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - "capacitor.config.ts" # uygulama adı / açılacak adres / eklenti ayarları
+      - "assets/**" # ikon ve açılış ekranı kaynağı
+      - "android/**" # native proje ve üretilmiş ikonlar
+      - "capacitor-shell/**" # çevrimdışı yedek sayfa
+      - ".github/workflows/android.yml"
+
+permissions:
+  contents: write # APK'yı repoya işleyebilmek için
+
+# Arka arkaya gelen push'larda yalnızca sonuncusu derlensin.
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Bağımlılıklar
+        run: npm ci
+
+      # Uygulamanın açacağı adres. Sırasıyla: elle girilen değer → repo
+      # değişkeni (Settings ▸ Secrets and variables ▸ Actions ▸ Variables)
+      # → capacitor.config.ts içindeki varsayılan.
+      # android/ klasörü repoda tutulmuyor (tamamı üretilmiş dosya). Burada
+      # sıfırdan kuruluyor: native proje + ikon/açılış ekranı.
+      - name: Native projeyi üret
+        env:
+          APP_URL: ${{ inputs.appUrl || vars.APP_URL }}
+        run: |
+          echo "Hedef adres: ${APP_URL:-(capacitor.config.ts varsayılanı)}"
+          if [ -d android ]; then npx cap sync android; else npx cap add android; fi
+          npx @capacitor/assets generate --android
+
+      # İmzalama anahtarı repo secret'larında varsa onu kullanırız; yoksa
+      # debug imzasıyla derleriz. Debug APK da telefona kurulur, tek farkı:
+      # her derlemede anahtar değiştiği için üzerine güncelleme yapılamaz,
+      # kullanıcı eskisini kaldırıp yenisini kurar.
+      #
+      # Kalıcı imza için (önerilir, kurulum tek seferlik):
+      #   keytool -genkey -v -keystore vk.keystore -alias vk \
+      #     -keyalg RSA -keysize 2048 -validity 10000
+      #   base64 -w0 vk.keystore   → ANDROID_KEYSTORE_BASE64 secret'ı
+      #   ayrıca ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD
+      - name: İmza anahtarını çöz
+        id: signing
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" | base64 -d > android/app/release.keystore
+            echo "mode=release" >> "$GITHUB_OUTPUT"
+          else
+            echo "İmza anahtarı yok — debug imzasıyla derlenecek."
+            echo "mode=debug" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: APK derle
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          if [ "${{ steps.signing.outputs.mode }}" = "release" ]; then
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file="$PWD/app/release.keystore" \
+              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$KEY_PASSWORD"
+          else
+            ./gradlew assembleDebug
+          fi
+
+      - name: APK'yı bul
+        run: |
+          APK=$(find android/app/build/outputs/apk -name "*.apk" | head -1)
+          echo "Bulunan APK: $APK"
+          cp "$APK" vampir-koylu.apk
+          ls -lh vampir-koylu.apk
+
+      # Yedek olarak çıktı da bırakıyoruz (repoya işleme başarısız olursa
+      # ya da APK'yı elle almak istersen buradan indirilir).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vampir-koylu-apk
+          path: vampir-koylu.apk
+
+      # APK'yı siteye koy. GITHUB_TOKEN ile atılan push'lar yeni bir workflow
+      # TETİKLEMEZ (GitHub bunu kasten engeller), yani sonsuz döngü riski yok.
+      - name: APK'yı siteye işle
+        run: |
+          cp vampir-koylu.apk public/vampir-koylu.apk
+          if git diff --quiet -- public/vampir-koylu.apk; then
+            echo "APK değişmedi, commit'e gerek yok."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/vampir-koylu.apk
+          git commit -m "chore(android): APK yeniden derlendi [skip ci]"
+          git push
+          echo "APK siteye işlendi. Vercel yayınlayınca indirme kartı belirecek."

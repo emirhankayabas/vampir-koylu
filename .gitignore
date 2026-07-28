@@ -42,3 +42,10 @@ next-env.d.ts
 
 # IDE
 /.idea
+
+# Capacitor native projesi — tamamı üretilmiş dosya (1.1 MB, 77 dosya).
+# Kaynağı capacitor.config.ts + assets/logo.svg; CI her derlemede sıfırdan
+# üretiyor (bkz. .github/workflows/android.yml), o yüzden repoda tutmuyoruz.
+# İleride native tarafta ELLE bir şey değiştirmen gerekirse (izinler, manifest,
+# push bildirimi…) bu satırı sil ve `git add android/` ile takibe al.
+/android

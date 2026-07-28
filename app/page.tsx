@@ -3,13 +3,22 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
-import { postAction, savePlayerId, saveModeratorRoom, useGuestName } from "@/app/_lib/client";
+import { postAction, savePlayerId, saveModeratorRoom, useGuestName, useInApp } from "@/app/_lib/client";
 import { ActiveSessions } from "@/app/_lib/sessions";
 import { AccountButton, useAccount, useIdentityGate } from "@/app/_lib/account";
 import { usePactGuard, PactModal } from "@/app/_lib/pact";
-import { Crest, RoleGlyph, PlayIcon, KeyIcon, ArrowLeftIcon, HomeIcon, CheckIcon } from "@/app/_lib/icons";
+import { Crest, RoleGlyph, PlayIcon, KeyIcon, ArrowLeftIcon, HomeIcon, CheckIcon, DownloadIcon } from "@/app/_lib/icons";
 import { metaByKey } from "@/lib/roles";
 import type { RoleConfig } from "@/lib/types";
+
+// Android uygulaması. APK, sitenin kendi public/ klasöründen servis edilir —
+// GitHub'a ya da başka bir barındırıcıya bağımlılık yok.
+//
+// Bayrağı next.config.ts derleme anında koyar: dosya public/ içinde yoksa
+// false olur ve kart hiç basılmaz, yani kırık bağlantı imkânsız. APK'yı nasıl
+// üreteceğin .github/workflows/android.yml başında yazıyor.
+const APK_URL = "/vampir-koylu.apk";
+const APK_AVAILABLE = process.env.NEXT_PUBLIC_APK_AVAILABLE === "true";
 
 // Ana ekrandaki rol vitrininde gösterilecek roller.
 const SHOWCASE: RoleConfig[] = [
@@ -38,6 +47,8 @@ export default function Home() {
   // Kimlik: hesap varsa isim sorulmaz; yoksa ilk katılımda ziyaretçi/kayıt modalı.
   const { account } = useAccount();
   const { gate, identityModal } = useIdentityGate();
+  // APK'nın içindeysek "uygulamayı indir" bağlantısını göstermenin anlamı yok.
+  const inApp = useInApp();
 
   async function createRoom() {
     setBusy("create");
@@ -198,6 +209,30 @@ export default function Home() {
                 Arkadaşların bu kodla katılır — herkes kendi telefonundan oynar.
               </p>
             </div>
+
+            {/* Android uygulaması. APK yayına konmadıysa ya da zaten APK
+                kabuğunun içindeysek gösterilmez. */}
+            {APK_AVAILABLE && !inApp && (
+              <a
+                href={APK_URL}
+                download
+                className="panel mt-3 flex items-center gap-3 p-4 text-left transition hover:brightness-125 active:scale-[0.98]"
+                style={{ borderColor: "rgba(52,211,153,0.28)" }}
+              >
+                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xl" style={{ background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
+                  📱
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-bold leading-none">Android Uygulaması</p>
+                  <p className="mt-1 text-[12px] leading-snug text-[var(--faint)]">
+                    APK olarak indir — tarayıcı çubuğu olmadan tam ekran oyna.
+                  </p>
+                </div>
+                <span className="shrink-0 text-[var(--emerald)]">
+                  <DownloadIcon size={20} />
+                </span>
+              </a>
+            )}
           </motion.div>
         ) : (
           <motion.div key="join" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="panel p-6">
