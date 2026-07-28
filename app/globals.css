@@ -173,7 +173,10 @@ body > * {
   transform: translateX(-200%) skewX(-20deg);
   animation: sheen 4.5s ease-in-out infinite;
   pointer-events: none;
-  will-change: transform;
+  /* will-change KASITLI OLARAK YOK: her düğmede kalıcı bir compositor katmanı
+     doğuruyordu. Ekranda 10+ düğme olan sayfalarda bu, mobilde ciddi bellek ve
+     GPU baskısı demek. Animasyon zaten transform üzerinde, tarayıcı gerektiğinde
+     katmanı kendisi açıyor. */
 }
 @keyframes sheen {
   0% { transform: translateX(-200%) skewX(-20deg); }
@@ -428,4 +431,38 @@ body > * {
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; }
+}
+
+/* ============================================================
+   Dokunmatik cihazlarda performans
+
+   Sorun: body::before (twinkle) ve body::after (drift) tam ekran, `fixed` ve
+   sürekli animasyonlu katmanlar. Tek başlarına ucuzlar — biri opacity, diğeri
+   transform animasyonluyor, ikisi de compositor'da çalışır.
+
+   Ama `.panel`'lerde backdrop-filter var ve paneller bu katmanların ÜSTÜNDE
+   duruyor. Altındaki piksel her karede değiştiği için her panel 12px gaussian
+   blur'u saniyede 60 kez yeniden hesaplamak zorunda kalıyor — kullanıcı hiçbir
+   şey yapmasa bile. Oyun ekranında 11, moderatör ekranında 12 panel var; yani
+   her karede 11-12 ayrı blur. Masaüstü GPU'su bunu yutuyor, Android WebView
+   (APK'nın içi) belirgin şekilde takılıyor.
+
+   Çözüm: dokunmatikte blur'u kapatıp paneli biraz daha opak yapıyoruz. Zemin
+   zaten koyu olduğu için görsel fark neredeyse yok, maliyet sıfıra iniyor.
+   Atmosfer katmanları duruyor — asıl pahalı olan onlar değildi.
+   ============================================================ */
+@media (hover: none) {
+  :root {
+    /* Blur gidince kaybolan derinliği opaklıkla telafi ediyoruz. */
+    --panel: rgba(24, 18, 42, 0.92);
+  }
+  .panel {
+    backdrop-filter: none;
+  }
+  /* `fixed` arka plan, mobilde her kaydırmada tam sayfa yeniden boyama
+     demek ve GPU hızlandırmalı kaydırmayı devre dışı bırakır. Zemin bir
+     gradyan olduğu için scroll'a almak gözle fark edilmiyor. */
+  body {
+    background-attachment: scroll;
+  }
 }

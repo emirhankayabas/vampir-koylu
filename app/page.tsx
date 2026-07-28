@@ -7,6 +7,7 @@ import { postAction, savePlayerId, saveModeratorRoom, useGuestName, useInApp } f
 import { ActiveSessions } from "@/app/_lib/sessions";
 import { AccountButton, useAccount, useIdentityGate } from "@/app/_lib/account";
 import { usePactGuard, PactModal } from "@/app/_lib/pact";
+import { NewsModal } from "@/app/_lib/announce";
 import { Crest, RoleGlyph, PlayIcon, KeyIcon, ArrowLeftIcon, HomeIcon, CheckIcon, DownloadIcon } from "@/app/_lib/icons";
 import { metaByKey } from "@/lib/roles";
 import type { RoleConfig } from "@/lib/types";
@@ -90,7 +91,7 @@ export default function Home() {
   }
 
   return (
-    <div className="relative flex flex-1 flex-col items-center justify-center px-6 py-10 safe-b">
+    <div className="relative flex flex-1 flex-col items-center justify-center px-6 py-6 safe-b">
       {/* --------- Hesap köşesi --------- */}
       <div className="absolute right-4 top-4 z-30">
         <AccountButton />
@@ -106,29 +107,29 @@ export default function Home() {
         {/* Amblemin arkasındaki nabız gibi atan hale */}
         <div className="relative grid place-items-center">
           <motion.div
-            className="absolute h-44 w-44 rounded-full"
+            className="absolute h-36 w-36 rounded-full"
             style={{ background: "radial-gradient(circle, rgba(168,85,247,0.35), transparent 68%)" }}
             animate={{ scale: [1, 1.12, 1], opacity: [0.55, 0.85, 0.55] }}
             transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
           />
           <motion.div
-            animate={{ y: [0, -9, 0] }}
+            animate={{ y: [0, -7, 0] }}
             transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
             style={{ filter: "drop-shadow(0 12px 30px rgba(168,85,247,0.45))" }}
           >
-            <Crest size={132} />
+            <Crest size={104} />
           </motion.div>
         </div>
 
-        <h1 className="font-display title-glow mt-5 text-[2.9rem] font-black leading-none tracking-tight">
+        <h1 className="font-display title-glow mt-3 text-[2.5rem] font-black leading-none tracking-tight">
           Vampir Köylü
         </h1>
-        <p className="mt-3 text-sm font-medium tracking-wide text-[var(--muted)]">
+        <p className="mt-2 text-sm font-medium tracking-wide text-[var(--muted)]">
           Gece kimin sıra, gündüz kim asılır?
         </p>
 
         {/* Rol vitrini — özel ikonlar */}
-        <div className="mt-6 flex items-center justify-center gap-2.5">
+        <div className="mt-4 flex items-center justify-center gap-2">
           {SHOWCASE.map((r, i) => {
             const meta = metaByKey(r.key, r.special);
             return (
@@ -137,7 +138,7 @@ export default function Home() {
                 initial={{ opacity: 0, y: 12, scale: 0.6 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 transition={{ delay: 0.4 + i * 0.08, type: "spring", stiffness: 260, damping: 16 }}
-                className="grid h-11 w-11 place-items-center rounded-2xl"
+                className="grid h-10 w-10 place-items-center rounded-2xl"
                 style={{
                   background: `${meta.accent}18`,
                   border: `1px solid ${meta.accent}55`,
@@ -154,7 +155,7 @@ export default function Home() {
       </motion.div>
 
       {/* --------- Aksiyonlar --------- */}
-      <div className="mt-11 w-full max-w-sm">
+      <div className="mt-7 w-full max-w-sm">
         {view === "home" ? (
           <motion.div
             key="home"
@@ -184,55 +185,56 @@ export default function Home() {
               <HomeIcon size={22} />
               Mevcut Oyunlar
             </button>
-            <button
-              onClick={() => router.push("/nasil-oynanir")}
-              disabled={busy !== null}
-              className="mt-1 text-center text-sm font-semibold text-[var(--violet)] transition hover:text-[var(--ink)]"
-            >
-              📖 Nasıl Oynanır? · Roller ve Kurallar
-            </button>
-            <button
-              onClick={() => setReadPact(true)}
-              disabled={busy !== null}
-              className="text-center text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--ink)]"
-            >
-              ⚖️ Köy Sözleşmesi · Oyuncu Kuralları
-            </button>
             {error && <p className="mt-1 text-center text-sm text-[var(--blood)]">{error}</p>}
 
-            <div className="panel mt-5 flex items-start gap-3 p-4 text-left">
-              <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-[var(--violet)]" style={{ background: "rgba(168,85,247,0.14)", border: "1px solid rgba(168,85,247,0.3)" }}>
-                <PlayIcon size={18} />
-              </div>
-              <p className="text-[13px] leading-snug text-[var(--muted)]">
-                Odayı kuran <b className="text-[var(--ink)]">moderatör</b> olur ve 6 haneli bir kod alır.
-                Arkadaşların bu kodla katılır — herkes kendi telefonundan oynar.
-              </p>
-            </div>
-
-            {/* Android uygulaması. APK yayına konmadıysa ya da zaten APK
-                kabuğunun içindeysek gösterilmez. */}
+            {/* Android uygulaması — ana aksiyonların hemen altında, kıvrım
+                üstünde. APK yayına konmadıysa ya da zaten APK kabuğunun
+                içindeysek gösterilmez. */}
             {APK_AVAILABLE && !inApp && (
               <a
                 href={APK_URL}
                 download
-                className="panel mt-3 flex items-center gap-3 p-4 text-left transition hover:brightness-125 active:scale-[0.98]"
+                className="panel flex items-center gap-3 px-4 py-3 text-left transition hover:brightness-125 active:scale-[0.98]"
                 style={{ borderColor: "rgba(52,211,153,0.28)" }}
               >
-                <div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-xl" style={{ background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
-                  📱
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-bold leading-none">Android Uygulaması</p>
-                  <p className="mt-1 text-[12px] leading-snug text-[var(--faint)]">
-                    APK olarak indir — tarayıcı çubuğu olmadan tam ekran oyna.
-                  </p>
-                </div>
+                <span className="text-xl leading-none">📱</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold leading-tight">Android Uygulaması</span>
+                  <span className="block text-[11px] leading-snug text-[var(--faint)]">
+                    Tam ekran oyna · APK indir
+                  </span>
+                </span>
                 <span className="shrink-0 text-[var(--emerald)]">
                   <DownloadIcon size={20} />
                 </span>
               </a>
             )}
+
+            {/* Alt bilgi şeridi — üç satırlık panel yerine tek satır ipucu ve
+                tek sıra bağlantı. Ana sayfanın telefonda kaydırmaya girmemesi
+                için kasten sıkıştırıldı. */}
+            <div className="mt-1 text-center">
+              <p className="text-[11px] leading-snug text-[var(--faint)]">
+                Odayı kuran <b className="text-[var(--muted)]">moderatör</b> olur · arkadaşların 6 haneli kodla katılır
+              </p>
+              <div className="mt-2 flex items-center justify-center gap-4">
+                <button
+                  onClick={() => router.push("/nasil-oynanir")}
+                  disabled={busy !== null}
+                  className="text-[13px] font-semibold text-[var(--violet)] transition hover:text-[var(--ink)]"
+                >
+                  📖 Nasıl Oynanır?
+                </button>
+                <span className="text-[var(--faint)]">·</span>
+                <button
+                  onClick={() => setReadPact(true)}
+                  disabled={busy !== null}
+                  className="text-[13px] font-semibold text-[var(--muted)] transition hover:text-[var(--ink)]"
+                >
+                  ⚖️ Köy Sözleşmesi
+                </button>
+              </div>
+            </div>
           </motion.div>
         ) : (
           <motion.div key="join" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="panel p-6">
@@ -299,6 +301,9 @@ export default function Home() {
 
       {pactModal}
       {identityModal}
+      {/* Tek seferlik müjde. APK gerçekten yayındaysa ve zaten uygulamanın
+          içinde değilsek gösterilir. */}
+      <NewsModal enabled={APK_AVAILABLE && !inApp} href={APK_URL} />
       <PactModal readOnly open={readPact} onAccept={() => setReadPact(false)} onCancel={() => setReadPact(false)} />
     </div>
   );
