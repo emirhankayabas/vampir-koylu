@@ -51,10 +51,13 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Capacitor 8 native tarafı Java 21 ile derleniyor
+      # (node_modules/@capacitor/android/capacitor/build.gradle → VERSION_21).
+      # Daha düşük bir JDK "invalid source release: 21" ile patlar.
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: 17
+          java-version: 21
 
       - name: Bağımlılıklar
         run: npm ci
@@ -132,13 +135,17 @@ jobs:
       - name: APK'yı siteye işle
         run: |
           cp vampir-koylu.apk public/vampir-koylu.apk
-          if git diff --quiet -- public/vampir-koylu.apk; then
-            echo "APK değişmedi, commit'e gerek yok."
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Önce sahneye al: dosya İLK KEZ ekleniyorsa `git diff` onu göremez
+          # (takip edilmeyen dosyalara bakmaz) ve ilk APK hiç commit'lenmezdi.
           git add public/vampir-koylu.apk
+          if git diff --cached --quiet; then
+            echo "APK bayt bayt aynı, commit'e gerek yok."
+            exit 0
+          fi
           git commit -m "chore(android): APK yeniden derlendi [skip ci]"
-          git push
+          # checkout@v4 push olayında detached HEAD bırakır; düz `git push`
+          # "not currently on a branch" der. Hedef dalı açıkça yazıyoruz.
+          git push origin HEAD:${{ github.ref_name }}
           echo "APK siteye işlendi. Vercel yayınlayınca indirme kartı belirecek."
