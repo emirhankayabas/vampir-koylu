@@ -6,6 +6,7 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { useStream, postAction, saveModeratorRoom, forgetRoom } from "@/app/_lib/client";
 import { SceneBackdrop, TopBar, Spinner, ConfirmModal, winnerTheme } from "@/app/_lib/ui";
+import { useStartCountdown, StartCountdown } from "@/app/_lib/countdown";
 import { roleMeta } from "@/lib/roles";
 import {
   RoleGlyph, Burst, BatIcon, MoonIcon, SunIcon,
@@ -37,6 +38,10 @@ export default function ModeratorPage() {
     if (notFound) forgetRoom(code);
     else if (roomOk) saveModeratorRoom(code);
   }, [code, notFound, roomOk]);
+
+  // Moderatör de el başlangıcı geri sayımını görür (oyuncularla aynı anda).
+  const startedAt = raw && !("notfound" in raw) && !("error" in raw) ? raw.game?.startedAt ?? null : null;
+  const countdown = useStartCountdown(startedAt);
 
   if (!raw) return <FullScreen><Spinner label="Bağlanıyor…" /></FullScreen>;
   if ("notfound" in raw) {
@@ -88,6 +93,7 @@ export default function ModeratorPage() {
 
         {game.status !== "lobby" && <div className="mt-5"><RoundReport game={game} /></div>}
         <LogPanel game={game} />
+        <StartCountdown {...countdown} />
       </div>
     </CodeContext.Provider>
   );

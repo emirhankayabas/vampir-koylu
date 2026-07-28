@@ -104,6 +104,7 @@ function freshGame(code: string): Game {
     assignMode: "random",
     phase: "night",
     dayNumber: 0,
+    startedAt: null,
     roles: defaultRoles(),
     loversEnabled: false,
     lovers: null,
@@ -1112,6 +1113,7 @@ export function participantView(game: Game, playerId: string | null): Participan
     mode: game.mode,
     phase: game.phase,
     dayNumber: game.dayNumber,
+    startedAt: game.startedAt ?? null,
     self: self
       ? {
           id: self.id,

@@ -6,6 +6,8 @@ import Link from "next/link";
 import { motion } from "motion/react";
 import { useStream, postAction, usePlayerId, savePlayerId, clearPlayerId, forgetRoom } from "@/app/_lib/client";
 import { SceneBackdrop, TopBar, Spinner, winnerTheme } from "@/app/_lib/ui";
+import { usePactGuard, RoundReminder } from "@/app/_lib/pact";
+import { useStartCountdown, StartCountdown } from "@/app/_lib/countdown";
 import { roleMeta, SURVIVOR_SHIELDS } from "@/lib/roles";
 import {
   RoleGlyph, Burst, MoonIcon, SunIcon, SkullIcon,
@@ -39,6 +41,9 @@ export default function OynaPage() {
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Köy Sözleşmesi: köye girmeden önce bir kez onaylanır (davetle doğrudan
+  // bu sayfaya gelenler ana sayfadaki kapıyı görmüyor).
+  const { guard, pactModal } = usePactGuard();
 
   const url = code ? `/api/stream?code=${code}${playerId ? `&playerId=${playerId}` : ""}` : null;
   const raw = useStream<Raw>(url);
@@ -47,6 +52,8 @@ export default function OynaPage() {
   const view = raw && !("error" in raw) && !("notfound" in raw) ? raw : null;
 
   const viewForMe = !!view && view.forPlayerId === playerId;
+  // El başlangıcı geri sayımı — sunucudaki damgaya bağlı, herkeste aynı anda biter.
+  const countdown = useStartCountdown(view?.startedAt);
 
   useEffect(() => {
     if (viewForMe && playerId && !view!.exists) clearPlayerId(code);
@@ -133,7 +140,7 @@ export default function OynaPage() {
               <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-[var(--amber)]"><LockIcon size={13} /> Bu oda şifreli</p>
             )}
           </div>
-          <form onSubmit={(e) => { e.preventDefault(); join(); }}>
+          <form onSubmit={(e) => { e.preventDefault(); guard(join); }}>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -164,6 +171,7 @@ export default function OynaPage() {
             </button>
           </form>
         </motion.div>
+        {pactModal}
       </div>
     );
   }
@@ -185,6 +193,9 @@ export default function OynaPage() {
           </div>
         </motion.div>
         <PlayerList players={view.players} selfId={self.id} />
+        {/* Lobide/bitişte de mount kalır: el başı hatırlatmasının işaretini
+            temizleyip bir sonraki elde tekrar gösterilmesini sağlar. */}
+        <RoundReminder code={code} status={view.status} />
       </div>
     );
   }
@@ -195,6 +206,7 @@ export default function OynaPage() {
       <div className="mx-auto w-full max-w-md px-5 py-6 safe-b">
         <TopBar code={code} inGame={false} />
         <EndScreen view={view} />
+        <RoundReminder code={code} status={view.status} />
       </div>
     );
   }
@@ -231,6 +243,9 @@ export default function OynaPage() {
       )}
 
       {view.announcement && !turn && <AnnouncementCard a={view.announcement} />}
+      <StartCountdown {...countdown} />
+      {/* Kural hatırlatması geri sayım bitmeden açılmaz. */}
+      <RoundReminder code={code} status={view.status} hold={countdown.active} />
     </div>
   );
 }

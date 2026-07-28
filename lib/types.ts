@@ -101,6 +101,10 @@ export interface Game {
   assignMode: AssignMode; // rol dağıtımı rastgele mi moderatör mü seçiyor
   phase: Phase;
   dayNumber: number;
+  // El başlatma anı (sunucu saati). Başlangıç geri sayımı bu damgaya bağlanır:
+  // telefonlar durumu yoklamayla farklı anlarda öğrense de sayım hepsinde AYNI
+  // anda biter. Oyun başlamadıysa null.
+  startedAt: number | null;
   roles: RoleConfig[];
   loversEnabled: boolean; // Âşıklar özelliği açık mı (oyun başında 2 kişi âşık olur)
   lovers: [string, string] | null; // âşık olan iki oyuncunun id'leri (yoksa null)
@@ -191,6 +195,7 @@ export interface ParticipantView {
   mode: GameMode;
   phase: Phase;
   dayNumber: number;
+  startedAt: number | null; // el başlatma anı — başlangıç geri sayımı için
   self: ParticipantSelf | null;
   players: { id: string; name: string; alive: boolean }[];
   vote: {

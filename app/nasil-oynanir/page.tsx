@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { roleMeta } from "@/lib/roles";
+import { PACT_RULES } from "@/app/_lib/pact";
 import type { RoleConfig } from "@/lib/types";
 import {
   Crest, RoleGlyph, ArrowLeftIcon, MoonIcon, SunIcon, BallotIcon, SkullIcon, CrownIcon,
@@ -140,6 +141,38 @@ export default function NasilOynanirPage() {
             </div>
           </motion.div>
         ))}
+      </div>
+
+      {/* Köy Sözleşmesi — oyuncu davranış kuralları */}
+      <SectionTitle>Köy Sözleşmesi</SectionTitle>
+      <p className="mb-3 -mt-1 px-1 text-xs leading-snug text-[var(--faint)]">
+        Yukarıdakiler oyunun kuralları. Bunlar ise <b className="text-[var(--muted)]">oyuncuların</b> kuralları —
+        odaya ilk kez girerken herkes bunları okuyup kabul eder.
+      </p>
+      <div className="mb-8 space-y-2.5">
+        {PACT_RULES.map((rule, i) => (
+          <motion.div
+            key={rule.title}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: Math.min(i * 0.05, 0.35) }}
+            className="panel flex items-start gap-3 p-4"
+            style={{ borderColor: "rgba(168,85,247,0.3)" }}
+          >
+            <div className="mt-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-xl text-xl" style={{ background: "rgba(168,85,247,0.14)" }}>
+              {rule.icon}
+            </div>
+            <div className="min-w-0">
+              <p className="font-display font-bold">
+                <span className="text-[var(--faint)]">{i + 1}.</span> {rule.title}
+              </p>
+              <p className="mt-0.5 text-sm leading-snug text-[var(--muted)]">{rule.body}</p>
+            </div>
+          </motion.div>
+        ))}
+        <p className="px-1 pt-1 text-center text-xs text-[var(--faint)]">
+          Kurallara uymayan oyuncuyu moderatör odadan çıkarabilir.
+        </p>
       </div>
 
       {/* İpuçları */}

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "motion/react";
 import { postAction, savePlayerId, saveModeratorRoom } from "@/app/_lib/client";
 import { ActiveSessions } from "@/app/_lib/sessions";
+import { usePactGuard, PactModal } from "@/app/_lib/pact";
 import { Crest, RoleGlyph, PlayIcon, KeyIcon, ArrowLeftIcon, HomeIcon } from "@/app/_lib/icons";
 import { metaByKey } from "@/lib/roles";
 import type { RoleConfig } from "@/lib/types";
@@ -26,6 +27,9 @@ export default function Home() {
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState<null | "create" | "join">(null);
   const [error, setError] = useState<string | null>(null);
+  // Köy Sözleşmesi: odaya girmeden (ya da oda kurmadan) önce bir kez onaylanır.
+  const { guard, pactModal } = usePactGuard();
+  const [readPact, setReadPact] = useState(false);
 
   async function createRoom() {
     setBusy("create");
@@ -129,7 +133,7 @@ export default function Home() {
             className="grid gap-3"
           >
             <ActiveSessions />
-            <button onClick={createRoom} disabled={busy !== null} className="btn btn-blood btn-lg">
+            <button onClick={() => guard(createRoom)} disabled={busy !== null} className="btn btn-blood btn-lg">
               <PlayIcon size={22} />
               {busy === "create" ? "Oda kuruluyor…" : "Oyun Oluştur"}
             </button>
@@ -155,6 +159,13 @@ export default function Home() {
               className="mt-1 text-center text-sm font-semibold text-[var(--violet)] transition hover:text-[var(--ink)]"
             >
               📖 Nasıl Oynanır? · Roller ve Kurallar
+            </button>
+            <button
+              onClick={() => setReadPact(true)}
+              disabled={busy !== null}
+              className="text-center text-sm font-semibold text-[var(--muted)] transition hover:text-[var(--ink)]"
+            >
+              ⚖️ Köy Sözleşmesi · Oyuncu Kuralları
             </button>
             {error && <p className="mt-1 text-center text-sm text-[var(--blood)]">{error}</p>}
 
@@ -200,14 +211,14 @@ export default function Home() {
             <input
               value={pw}
               onChange={(e) => setPw(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && joinRoom()}
+              onKeyDown={(e) => e.key === "Enter" && guard(joinRoom)}
               type="password"
               placeholder="Oda şifresiz ise boş bırak"
               maxLength={40}
               className="input"
             />
             {error && <p className="mt-3 text-center text-sm text-[var(--blood)]">{error}</p>}
-            <button onClick={joinRoom} disabled={busy !== null} className="btn btn-emerald btn-lg mt-5 w-full">
+            <button onClick={() => guard(joinRoom)} disabled={busy !== null} className="btn btn-emerald btn-lg mt-5 w-full">
               {busy === "join" ? "Katılıyor…" : "Köye Gir"}
             </button>
             <button onClick={() => { setView("home"); setError(null); }} className="btn btn-ghost mt-2 w-full">
@@ -216,6 +227,9 @@ export default function Home() {
           </motion.div>
         )}
       </div>
+
+      {pactModal}
+      <PactModal readOnly open={readPact} onAccept={() => setReadPact(false)} onCancel={() => setReadPact(false)} />
     </div>
   );
 }

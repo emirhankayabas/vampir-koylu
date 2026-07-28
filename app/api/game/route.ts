@@ -279,6 +279,8 @@ async function handleAction(
       assignLovers(game); // Âşıklar açıksa rastgele 2 uygun oyuncuyu eşleştirir
       game.status = "in_progress";
       game.dayNumber = 1;
+      // Başlangıç geri sayımının ortak çıpası — herkesin ekranında aynı anda biter.
+      game.startedAt = Date.now();
       game.winner = null;
       game.pendingHunterId = null;
       game.hangedThisDay = false;
@@ -445,6 +447,7 @@ async function handleAction(
 
     case "backToLobby": {
       game.status = "lobby";
+      game.startedAt = null; // bayat damga yeni elde geri sayımı tetiklemesin
       game.winner = null;
       game.pendingHunterId = null;
       game.hangedThisDay = false;
